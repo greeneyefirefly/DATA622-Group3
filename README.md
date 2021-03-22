@@ -5,4 +5,4 @@ Collaborators:
 [Maryluz Cruz](https://github.com/Luz917)  
 [Samantha Deokinanan](https://github.com/greeneyefirefly/)  
 [Tony Mei](https://github.com/Sizzlo)   
-[Charles Rosemond](https://github.com/chrosemo) 
+[Charlie Rosemond](https://github.com/chrosemo) 
