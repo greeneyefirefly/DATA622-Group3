@@ -1,0 +1,336 @@
+---
+title: 'Data 622: Introduction to Machine Learning'
+subtitle: 'Spring 2021 - Group 3 - Homework 3'
+author: "Maryluz Cruz, Samantha Deokinanan, Amber Ferger, Tony Mei, and Charlie Rosemond"
+date: "3/29/2021"
+output:
+  html_document:
+    toc: TRUE
+    toc_depth: 4
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
+set.seed(123)
+```
+
+```{r libraries, include=FALSE}
+library(dplyr)
+library(palmerpenguins)
+library(mice)
+library(caret)
+library(tidyr)
+
+```
+
+# Data Exploration & Tidying
+## Penguins Dataset
+
+The **penguins dataset** will be used for the first model. 
+```{r, include = FALSE}
+
+penguins_df <- palmerpenguins::penguins %>% 
+  dplyr::select(-year)
+
+```
+
+This dataset is composed of `r nrow(penguins_df)` datapoints and has one response variable (`species`) and seven explanatory variables (`island`, `bill_length_mm`, `bill_depth_mm`, `flipper_length_mm`, `body_mass_g`, `sex`, and `year`). 
+
+Intuitively, we know that the `year` variable shouldn't make a difference in the penguin species, so we will remove it from the dataset. We are now left with two categorical variables (`island` and `sex`) and four numeric variables (`bill_length_mm`, `bill_depth_mm`, `flipper_length_mm` and`body_mass_g`).
+
+```{r}
+str(penguins_df)
+```
+
+We can also get a gauge for the distribution of species in the dataset. 
+
+``` {r}
+penguins_df %>% 
+  count(species)
+```
+
+
+### Visualizing the Data
+
+We can visualize the features across each species. 
+
+#### Categorical Features
+We can see that the `gender` variable is balanced by species. 
+
+```{r, fig.height = 3}
+penguins_df %>%
+  drop_na() %>%
+  count(sex, species) %>%
+  ggplot() + geom_col(aes(x = species, y = n, fill = species)) +
+  geom_label(aes(x = species, y = n, label = n)) +
+  facet_wrap(~sex) +
+  theme_minimal() +
+  labs(title = 'Penguins Species by Gender')
+```
+
+We can also take a look at the `island` variable. 
+
+```{r, fig.height=3}
+
+penguins_df %>%
+  drop_na() %>%
+  count(island, species) %>%
+  ggplot() + geom_col(aes(x = species, y = n, fill = species)) +
+  geom_label(aes(x = species, y = n, label = n)) +
+  facet_wrap(~island) +
+  theme_minimal() +
+  labs(title = 'Penguins Species by Island')
+
+```
+
+We can see that: 
+
+* **Adelie** penguins are the only species to live on Torgersen. 
+* **Gentoo** penguins only live on Biscoe.
+* **Chinstrap** penguins only live on Dream. 
+
+
+#### Numeric Features
+We can also take a look at our numeric features. 
+
+```{r, fig.height = 5}
+
+no_nulls <- penguins_df %>% drop_na()
+
+featurePlot(x = no_nulls %>% select_if(is.numeric) , 
+            y = no_nulls$species, 
+            plot="box", 
+            scales=list(x=list(relation="free"), 
+                        y=list(relation="free")), 
+            auto.key=list(columns=3))
+
+```
+
+Some things to note:
+
+* **Gentoo** penguins tend to have a larger flipper length and body mass, but smaller bill depth than Adelie and Chinstrap.
+* **Adelie** penguins tend to have a smaller bill length than Chinstrap and Gentoo. 
+* **Chinstrap** penguins tend to have similar flipper length, body mass, and bill depth to Adelie and similar bill length to Gentoo. 
+
+Next, we'll look at the relationships between the variables across species. The feature plot function will create pair-wise scatter plots for all of our numeric features, with dots colored by the species attribute.
+
+```{r, fig.height = 5}
+
+featurePlot(x = no_nulls %>% select_if(is.numeric),
+        y = no_nulls$species,
+        plot = "pairs",
+        auto.key = list(columns = 3))
+
+```
+
+In nearly all instances, the Gentoo species is distinguishable from the Gentoo and Adelie species. 
+
+Finally, we can look at the correlations between variables. 
+
+```{r}
+
+penguins_corr <- penguins_df %>% drop_na() %>% select_if(is.numeric) %>% cor()
+penguins_corr[lower.tri(penguins_corr, diag = TRUE)] <- NA
+penguins_corr
+
+```
+
+We can see that `flipper_length_mm` and `body_mass_g` are highly positively correlated, which means the larger the flipper length, the heavier the penguin. 
+
+
+### Dealing with Missing Values
+
+Next, we'll deal with missing data. We can count the number of null values in each column of the dataframe. 
+``` {r}
+colSums(is.na(penguins_df))
+```
+
+We can see that 5 out of 6 of the explanatory variables have at least some null values. It doesn't make sense to impute the null records of our categorical variable (`sex`), so we will remove them from our dataset. We will impute the missing data of the numerical values using the Multivariate imputation by chained equations (MICE) method. Multiple imputation involves creating multiple predictions for each missing value, helping to account for the uncertainty in the individual imputations. 
+
+```{r}
+# remove records with null sex values
+penguins_df <- penguins_df %>% filter(!is.na(sex))
+
+# impute null values using MICE method
+penguins_df <- complete(mice(data = penguins_df,
+                         method = "pmm", print = FALSE), 3)
+```
+
+The final dataset has `r nrow(penguins_df)` records and `r ncol(penguins_df) - 1 ` predictor variables. 
+
+## Loan Approval Dataset
+
+The **loan approval** dataset will be used for the remaining models. 
+```{r, include = FALSE}
+loan_df_link <- 'https://raw.githubusercontent.com/greeneyefirefly/DATA622-Group3/main/Project_3/Loan_approval.csv'
+loan_df <- read.csv(loan_df_link) %>%
+  mutate_all(na_if,"") %>%
+  mutate(Gender = as.factor(Gender),
+         Married = as.factor(Married), 
+         Dependents = as.factor(Dependents),
+         Education = as.factor(Education),
+         Self_Employed = as.factor(Self_Employed),
+         Credit_History = as.factor(Credit_History),
+         Property_Area = as.factor(Property_Area),
+         Loan_Status = as.factor(Loan_Status)) %>%
+  select(-Loan_ID) 
+
+```
+This dataset includes `r nrow(loan_df)` datapoints and `r ncol(loan_df)` columns. The target variable is `Loan_Status`. Since the `Loan_ID` variable is unique to each record, we will remove it from the dataset. 
+
+```{r}
+str(loan_df)
+```
+
+We can also see that the `Loan_Status` classification is highly imbalanced, with more than double the amount of approvals (Y) than rejections (N). 
+
+```{r}
+loan_df %>% 
+  count(Loan_Status)
+```
+
+### Visualizing the Data
+Let's take a preliminary look at the summary statistics for the dataset: 
+
+```{r}
+summary(loan_df)
+```
+
+Some things to note: 
+
+* Seven of the variables have missing values, which is something we will have to deal with later on. 
+* Almost all of the categorical variables are highly imbalanced: `Gender` (more males than females), `Married` (more married loan applicants than single), `Education` (more graduates than non-graduates), `Self_Employed` (less self-employed individuals), and `Credit History` (more individuals with credit history than not).
+* At first glance, the `Applicant Income` variable looks to be a little right-skewed (higher mean than median).
+
+#### Categorical Features
+We'll look at each of the categorical features with respect to the final classification. Since most of our categorical features are imbalanced, we will look at the data in terms of percentages as opposed to counts. 
+
+We can see that `Gender` doesn't appear to have as much of an impact on the final outcome. Regardless of the sex, around 70% of individuals are approved for a loan. 
+```{r, echo=FALSE}
+
+tab_gender <- with(loan_df, table(Gender, Loan_Status))
+prop.table(tab_gender, margin = 1)
+
+```
+
+`Married`: Married individuals tend to be approved more often than non-married individuals. 
+```{r, echo=FALSE}
+
+tab_married <- with(loan_df, table(Married, Loan_Status))
+prop.table(tab_married, margin = 1)
+
+```
+
+The number of `Dependents` an individual has doesn't appear to be as indicative of loan approval. 
+```{r, echo=FALSE}
+
+tab_kids <- with(loan_df, table(Dependents, Loan_Status))
+prop.table(tab_kids, margin = 1)
+
+```
+
+`Education`: Graduates tend to be approved more often than non-graduates. 
+```{r, echo = FALSE}
+
+tab_edu <- with(loan_df, table(Education, Loan_Status))
+prop.table(tab_edu, margin = 1)
+
+```
+
+`Self-Employed`: No real impact.
+
+```{r, echo = FALSE}
+
+tab_emp <- with(loan_df, table(Self_Employed, Loan_Status))
+prop.table(tab_emp, margin = 1)
+
+```
+
+`Credit History`: This factor has a really large impact on the final approval! 79% of individuals with credit history are approved versus only 8% for those with no credit history. 
+```{r, echo = FALSE}
+
+tab_cred <- with(loan_df, table(Credit_History, Loan_Status))
+prop.table(tab_cred, margin = 1)
+
+```
+
+`Property_Area`: Individuals living in semi-urbal areas tend to be approved more often than those in rural or urban areas.  
+```{r ,echo = FALSE}
+
+tab_prop <- with(loan_df, table(Property_Area, Loan_Status))
+prop.table(tab_prop, margin = 1)
+
+```
+
+#### Numeric Features 
+We can also take a look at the numeric features. 
+
+```{r, fig.height=3, echo = FALSE}
+loan_df %>%
+  drop_na() %>%
+  ggplot( aes(x=ApplicantIncome, fill=Loan_Status)) +
+  geom_histogram( alpha=0.6, position = 'identity') +
+  labs(title = 'Loan Approval by Applicant Income')
+```
+
+```{r, fig.height=3, echo = FALSE}
+loan_df %>%
+  drop_na() %>%
+  ggplot( aes(x=CoapplicantIncome, fill=Loan_Status)) +
+  geom_histogram( alpha=0.6, position = 'identity') +
+  labs(title = 'Loan Approval by Coapplicant Income')
+```
+
+
+```{r, fig.height=3, echo = FALSE}
+loan_df %>%
+  drop_na() %>%
+  ggplot( aes(x=LoanAmount, fill=Loan_Status)) +
+  geom_histogram( alpha=0.6, position = 'identity') +
+  labs(title = 'Loan Approval by Loan Amount')
+```
+
+```{r, fig.height=3, echo = FALSE}
+loan_df %>%
+  drop_na() %>%
+  ggplot( aes(x=Loan_Amount_Term, fill=Loan_Status)) +
+  geom_histogram( alpha=0.6, position = 'identity') +
+  labs(title = 'Loan Approval by Loan Amount Term')
+```
+
+
+Finally, we can look at the correlations between the features. 
+```{r}
+
+loan_corr <- loan_df %>% drop_na() %>% select_if(is.numeric) %>% cor()
+loan_corr[lower.tri(loan_corr, diag = TRUE)] <- NA
+loan_corr
+
+```
+None of the numeric features are highly correlated with each other. 
+
+
+### Dealing with Missing Values
+
+Similar to how we analyzed the missing values in the penguins dataset, we will look at the missing values in the loan dataset. This time, we'll use the summary function to get a gauge on this: 
+
+```{r}
+summary(loan_df)
+```
+
+We can see that 5 categorical and 2 numeric variables have missing values. 
+
+* **Gender**, **Married**, and **Dependents** are not easily imputed, and since we have a small number of missing values, we will remove these records from the dataset. 
+
+
+# Training & Analysis
+## KNN
+
+## Decision Trees
+
+## Random Forest
+
+## Gradient Boosting
+
+# Model Performance & Conclusions
