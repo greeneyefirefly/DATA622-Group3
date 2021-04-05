@@ -279,9 +279,28 @@ Of all the classification model used to classify the penguin species, the Naive 
 
 ### Loan Approval 
 
+#### Data Exploration 
 The **loan approval** dataset will be used for the remaining models. 
 
-```{r, include = FALSE}
+*Loan Approvals Data Column Definition*
+
+Variable | Description
+----|------
+Loan_ID | Unique Loan ID
+Gender | Male/Female
+Married | Applicant married (Y/N)
+Dependents | Number of dependents
+Education | Applicant Education (Graduate/Undergraduate)
+Self_Employed | Self employed (Y/N)
+ApplicantIncome | Applicant Income
+CoapplicantIncome | Coapplicant Income
+LoanAmount | Loan amount in thousands
+Loan_Amount_Term | Term of loan in months
+Credit_History | Credit history meets guidelines
+Property_Area | Urban/Semi Urban/Rural
+Loan_Status | (Target) Loan Approved (Y/N)
+
+```{r loan_data}
 loan_df_link <- 'https://raw.githubusercontent.com/greeneyefirefly/DATA622-Group3/main/Project_3/Loan_approval.csv'
 loan_df <- read.csv(loan_df_link) %>%
   mutate_all(na_if,"") %>%
@@ -292,94 +311,155 @@ loan_df <- read.csv(loan_df_link) %>%
          Self_Employed = as.factor(Self_Employed),
          Credit_History = as.factor(Credit_History),
          Property_Area = as.factor(Property_Area),
-         Loan_Status = as.factor(Loan_Status)) 
-loan_df = loan_df[,-1] 
+         Loan_Status = as.factor(Loan_Status)) %>%
+  select(-Loan_ID)
 ```
 
-This dataset includes `r nrow(loan_df)` datapoints and `r ncol(loan_df)` columns. The target variable is `Loan_Status`. Since the `Loan_ID` variable is unique to each record, we will remove it from the dataset. 
+This dataset includes `r nrow(loan_df)` datapoints and `r ncol(loan_df) +1` columns. The target variable is `Loan_Status`. Since the `Loan_ID` variable is unique to each record, we will remove it from the dataset. We can see that the `Loan_Status` classification is highly imbalanced, with more than double the amount of approvals (Y) than rejections (N). 
 
-```{r}
-str(loan_df)
+```{r loan_dist, fig.height=3}
+
+loan_df %>%
+  drop_na() %>%
+  count(Loan_Status) %>%
+  ggplot() + geom_col(aes(x = Loan_Status, y = n, fill = Loan_Status)) +
+  geom_label(aes(x = Loan_Status, y = n, label = n)) +
+  theme_minimal() +
+  labs(title = 'Distribution of Loan Status')
+
 ```
 
-We can also see that the `Loan_Status` classification is highly imbalanced, with more than double the amount of approvals (Y) than rejections (N). 
-
-```{r}
-loan_df %>% 
-  count(Loan_Status)
-```
-
-#### Visualizing the Data
+#### Understanding the Data
 Let's take a preliminary look at the summary statistics for the dataset: 
 
-```{r}
-summary(loan_df)
+```{r loan_summary}
+dfSummary(loan_df, plain.ascii = TRUE, style = "grid", graph.col = FALSE, footnote = NA)
 ```
 
 Some things to note: 
 
 * Seven of the variables have missing values, which is something we will have to deal with later on. 
 * Almost all of the categorical variables are highly imbalanced: `Gender` (more males than females), `Married` (more married loan applicants than single), `Education` (more graduates than non-graduates), `Self_Employed` (less self-employed individuals), and `Credit History` (more individuals with credit history than not).
-* At first glance, the `Applicant Income` variable looks to be a little right-skewed (higher mean than median).
 
 ##### Categorical Features
 
 We'll look at each of the categorical features with respect to the final classification. Since most of our categorical features are imbalanced, we will look at the data in terms of percentages as opposed to counts. 
 
-We can see that `Gender` doesn't appear to have as much of an impact on the final outcome. Regardless of the sex, around 70% of individuals are approved for a loan. 
+`Gender`: Regardless of the sex, around 70% of individuals are approved for a loan. 
 
-```{r, echo=FALSE}
+```{r loan_gender, fig.height=3}
 tab_gender <- with(loan_df, table(Gender, Loan_Status))
-prop.table(tab_gender, margin = 1)
+tab_gender <- as.data.frame(prop.table(tab_gender, margin = 1)) %>%
+  filter(Loan_Status == 'Y')
+
+tab_gender %>% 
+  ggplot() +  
+  geom_col(aes(x=Gender, y=Freq, fill=Gender)) +
+  geom_label(aes(x=Gender, y=Freq, label = round(Freq,2))) +
+  theme_minimal() +
+  labs(title = 'Approved Loans by Gender')
+
 ```
 
 `Married`: Married individuals tend to be approved more often than non-married individuals. 
 
-```{r, echo=FALSE}
+```{r loan_marriage, fig.height=3}
 tab_married <- with(loan_df, table(Married, Loan_Status))
-prop.table(tab_married, margin = 1)
+tab_married <- as.data.frame(prop.table(tab_married, margin = 1)) %>%
+  filter(Loan_Status == 'Y')
+
+tab_married %>% 
+  ggplot() +  
+  geom_col(aes(x=Married, y=Freq, fill=Married)) +
+  geom_label(aes(x=Married, y=Freq, label = round(Freq,2))) +
+  theme_minimal() +
+  labs(title = 'Approved Loans by Marital Status')
+
 ```
 
-The number of `Dependents` an individual has doesn't appear to be as indicative of loan approval. 
+`Dependents`: The number of dependents an individual has doesn't appear to be as indicative of loan approval. 
 
-```{r, echo=FALSE}
+```{r loan_kids, fig.height=3}
 tab_kids <- with(loan_df, table(Dependents, Loan_Status))
-prop.table(tab_kids, margin = 1)
+tab_kids <- as.data.frame(prop.table(tab_kids, margin = 1)) %>%
+  filter(Loan_Status == 'Y')
+
+
+tab_kids %>% 
+  ggplot() +  
+  geom_col(aes(x=Dependents, y=Freq, fill=Dependents)) +
+  geom_label(aes(x=Dependents, y=Freq, label = round(Freq,2))) +
+  theme_minimal() +
+  labs(title = 'Approved Loans by Number of Dependents')
 ```
 
 `Education`: Graduates tend to be approved more often than non-graduates. 
 
-```{r, echo = FALSE}
+```{r loan_edu, fig.height=3}
 tab_edu <- with(loan_df, table(Education, Loan_Status))
-prop.table(tab_edu, margin = 1)
+tab_edu <- as.data.frame(prop.table(tab_edu, margin = 1)) %>%
+  filter(Loan_Status == 'Y')
+
+tab_edu %>% 
+  ggplot() +  
+  geom_col(aes(x=Education, y=Freq, fill=Education)) +
+  geom_label(aes(x=Education, y=Freq, label = round(Freq,2))) +
+  theme_minimal() +
+  labs(title = 'Approved Loans by Education')
 ```
 
-`Self-Employed`: No real impact.
+`Self-Employed`: Employment Status alone doesn't appear to have a significant impact on approval status.
 
-```{r, echo = FALSE}
+```{r loan_emp, fig.height=3}
 tab_emp <- with(loan_df, table(Self_Employed, Loan_Status))
-prop.table(tab_emp, margin = 1)
+tab_emp <- as.data.frame(prop.table(tab_emp, margin = 1)) %>%
+  filter(Loan_Status == 'Y')
+
+tab_emp %>% 
+  ggplot() +  
+  geom_col(aes(x=Self_Employed, y=Freq, fill=Self_Employed)) +
+  geom_label(aes(x=Self_Employed, y=Freq, label = round(Freq,2))) +
+  theme_minimal() +
+  labs(title = 'Approved Loans by Employment Status')
 ```
 
-`Credit History`: This factor has a really large impact on the final approval! 79% of individuals with credit history are approved versus only 8% for those with no credit history. 
+`Credit History`: This factor has a really large impact on the final approval! 80% of individuals with credit history are approved versus only 8% for those with no credit history. 
 
-```{r, echo = FALSE}
+```{r loan_credit, fig.height=3}
 tab_cred <- with(loan_df, table(Credit_History, Loan_Status))
-prop.table(tab_cred, margin = 1)
+tab_cred <- as.data.frame(prop.table(tab_cred, margin = 1)) %>%
+  filter(Loan_Status == 'Y')
+
+tab_cred %>% 
+  ggplot() +  
+  geom_col(aes(x=Credit_History, y=Freq, fill=Credit_History)) +
+  geom_label(aes(x=Credit_History, y=Freq, label = round(Freq,2))) +
+  theme_minimal() +
+  labs(title = 'Approved Loans by Credit History')
 ```
 
-`Property_Area`: Individuals living in semi-urbal areas tend to be approved more often than those in rural or urban areas.  
+`Property_Area`: Individuals living in semi-urban areas tend to be approved more often than those in rural or urban areas.  
 
-```{r ,echo = FALSE}
+```{r loan_prop, fig.height=3}
 tab_prop <- with(loan_df, table(Property_Area, Loan_Status))
-prop.table(tab_prop, margin = 1)
+tab_prop <- as.data.frame(prop.table(tab_prop, margin = 1)) %>%
+  filter(Loan_Status == 'Y')
+
+tab_prop %>% 
+  ggplot() +  
+  geom_col(aes(x=Property_Area, y=Freq, fill=Property_Area)) +
+  geom_label(aes(x=Property_Area, y=Freq, label = round(Freq,2))) +
+  theme_minimal() +
+  labs(title = 'Approved Loans by Property Area')
 ```
 
 ##### Numeric Features 
 
 We can also take a look at the numeric features. 
 
-```{r, fig.height=3, echo = FALSE}
+`Applicant Income`: We see a few outliers in both approvals and non-approvals. The distribution for each classification is right-skewed. 
+
+```{r loan_income, fig.height=3}
 loan_df %>%
   drop_na() %>%
   ggplot( aes(x=ApplicantIncome, fill=Loan_Status)) +
@@ -387,7 +467,8 @@ loan_df %>%
   labs(title = 'Loan Approval by Applicant Income')
 ```
 
-```{r, fig.height=3, echo = FALSE}
+`Coapplicant Income`: Once again, a few very high outliers. Data is right-skewed for both classes. 
+```{r loan_coincome, fig.height=3}
 loan_df %>%
   drop_na() %>%
   ggplot( aes(x=CoapplicantIncome, fill=Loan_Status)) +
@@ -395,7 +476,8 @@ loan_df %>%
   labs(title = 'Loan Approval by Coapplicant Income')
 ```
 
-```{r, fig.height=3, echo = FALSE}
+`Loan Amount`: A few outliers in each class, but a normal distribution otherwise. 
+```{r loan_amount, fig.height=3}
 loan_df %>%
   drop_na() %>%
   ggplot( aes(x=LoanAmount, fill=Loan_Status)) +
@@ -403,7 +485,8 @@ loan_df %>%
   labs(title = 'Loan Approval by Loan Amount')
 ```
 
-```{r, fig.height=3, echo = FALSE}
+`Loan Term`: Most applicants have a loan term between 300 - 400 months. 
+```{r loan_term, fig.height=3}
 loan_df %>%
   drop_na() %>%
   ggplot( aes(x=Loan_Amount_Term, fill=Loan_Status)) +
@@ -411,30 +494,69 @@ loan_df %>%
   labs(title = 'Loan Approval by Loan Amount Term')
 ```
 
-Finally, we can look at the correlations between the features. 
-
-```{r}
-loan_corr <- loan_df %>% drop_na() %>% select_if(is.numeric) %>% cor()
-loan_corr[lower.tri(loan_corr, diag = TRUE)] <- NA
-loan_corr
-```
-
-None of the numeric features are highly correlated with each other. 
-
-#### Dealing with Missing Values
-
-Similar to how we analyzed the missing values in the penguins dataset, we will look at the missing values in the loan dataset. This time, we'll use the summary function to get a gauge on this: 
-
-```{r}
-summary(loan_df)
-```
+#### Data Preparation
 
 We can see that 5 categorical and 2 numeric variables have missing values. 
 
-* **Gender**, **Married**, and **Dependents** are not easily imputed, and since we have a small number of missing values, we will remove these records from the dataset. 
+```{r loan_missing}
+
+loan_missing <- loan_df %>%
+  gather(key = "key", value = "val") %>%
+  mutate(isna = is.na(val)) %>%
+  group_by(key) %>%
+  mutate(total = n()) %>%
+  group_by(key, total, isna) %>%
+  summarise(num_null = n()) %>%
+  mutate(pct_missing = round(num_null / total * 100,2)) %>%
+  filter(isna == TRUE) 
+
+loan_missing %>%
+  ggplot() + 
+  geom_col(aes(x = key, y = pct_missing), fill='steelblue') +
+  geom_label(aes(x = key, y = pct_missing, label = pct_missing)) +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) +
+  labs(title = 'Percent Missing by Variable', x = 'Variable', y = 'Percent Missing')
+
+```
+
+* We will discard all of the records that have missing categorical features. These will not be easy to impute and some (like Credit History) are impactful in the final classification.
+* We will impute the values for the numeric features using the Multivariate imputation by chained equations (MICE) method. Multiple imputation involves creating multiple predictions for each missing value, helping to account for the uncertainty in the individual imputations. 
+
+```{r loan_impute}
+
+# remove records with null categorical values
+loan_df <- loan_df %>% filter(!is.na(Married) & 
+                                !is.na(Gender) & 
+                                !is.na(Dependents) &
+                                !is.na(Self_Employed) &
+                                !is.na(Credit_History))
+
+# impute numeric null values using MICE method
+loan_df <- complete(mice(data = loan_df,
+                         method = "pmm", print = FALSE), 3)
+
+```
+
+
+The final dataset contains `r nrow(loan_df)` records with `r ncol(loan_df)` columns. 
 
 
 #### Training & Analysis
+
+##### Train, Test, Split
+
+```{r loan_tts}
+which_train <- sample(x = c(TRUE, FALSE), 
+                      size = nrow(loan_df), 
+                      replace = TRUE, 
+                      prob = c(0.7, 0.3))
+
+train_set <- loan_df[which_train, ]
+test_set <- loan_df[!which_train, ]
+```
+
+The three models will be trained on 70% of the dataset and validated on the remaining 30% of the set. The training set contains `r nrow(train_set)` records and the test set contains `r nrow(test_set)` records. 
+
 
 ##### Model #1: Decision Trees
 
@@ -486,4 +608,38 @@ knitr::opts_chunk$set(echo=TRUE, eval=FALSE)
 ```{r pengCMx}
 ```
 ```{r pengROC}
+```
+```{r loan_data}
+```
+```{r loan_dist}
+```
+```{r loan_summary}
+```
+```{r loan_gender}
+```
+```{r loan_marriage}
+```
+```{r loan_kids}
+```
+```{r loan_edu}
+```
+```{r loan_emp}
+```
+```{r loan_credit}
+```
+```{r loan_prop}
+```
+```{r loan_income}
+```
+```{r loan_coincome}
+```
+```{r loan_amount}
+```
+```{r loan_term}
+```
+```{r loan_missing}
+```
+```{r loan_impute}
+```
+```{r loan_tts}
 ```
