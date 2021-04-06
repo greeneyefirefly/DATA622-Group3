@@ -689,7 +689,7 @@ gbm.fit2 <- gbm(
   formula = Loan_Status ~ .,
   distribution = "gaussian",
   data = train_set,
-  n.trees = 5000,
+  n.trees = 3000,
   interaction.depth = 2,
   shrinkage = 0.01,
   cv.folds = 5,
@@ -894,12 +894,12 @@ predict_model.gbm <- function(x, newdata, ...) {
 
 ```{r}
 # predict values for test data
-pred <- predict(gbm.fit.final, n.trees = gbm.fit.final$n.trees, train_set)
+pred <- predict(gbm.fit.final, n.trees = gbm.fit.final$n.trees, test_set)
 
-train_set$Loan_Status<-as.numeric(train_set$Loan_Status)
+test_set$Loan_Status<-as.numeric(test_set$Loan_Status)
 
 # results
-caret::RMSE(pred, train_set$Loan_Status)
+caret::RMSE(pred, test_set$Loan_Status)
 
 
 ```
