@@ -28,6 +28,8 @@ library(mice)
 library(dummies)
 library(Boruta)
 library(pROC)
+library(rsample)
+library(gbm)
 ```
 
 ## Overview {.tabset .tabset-fade .tabset.-pills}
@@ -638,6 +640,275 @@ Overall, the random forests model predicts approved loan applications well (`Loa
 
 ##### Model #3: Gradient Boosting
 
+
+```{r}
+
+# for reproducibility
+set.seed(525)
+
+# train GBM model
+gbm.fit <- gbm(
+  formula = Loan_Status ~.,
+  distribution = "gaussian",
+  data = train_set,
+  n.trees = 10000,
+  interaction.depth = 1,
+  shrinkage = 0.001,
+  cv.folds = 5,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+  )  
+
+# print results
+print(gbm.fit)
+```
+
+
+
+
+```{r}
+# get MSE and compute RMSE
+sqrt(min(gbm.fit$cv.error))
+
+
+# plot loss function as a result of n trees added to the ensemble
+gbm.perf(gbm.fit, method = "cv")
+
+```
+
+We see that the CV error starts leveling off at 2648 trees. Here, we see that the minimum CV RMSE is 0.4055994 (this means on average our model is about 0.4055994 off from the actual loan status)
+
+###### Tuning
+
+```{r}
+# for reproducibility
+set.seed(525)
+
+# train GBM model
+gbm.fit2 <- gbm(
+  formula = Loan_Status ~ .,
+  distribution = "gaussian",
+  data = train_set,
+  n.trees = 5000,
+  interaction.depth = 2,
+  shrinkage = 0.01,
+  cv.folds = 5,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+  )  
+```
+
+We reduce the shrinkage from 0.001 to 0.01 and the number of trees ran to 5000. We also increase the depth of the trees from a single split to 2 splits. Compared to the above model, its RMSE is higher with 0.3931338.
+
+```{r}
+# find index for n trees with minimum CV error
+min_MSE <- which.min(gbm.fit2$cv.error)
+
+# get MSE and compute RMSE
+sqrt(gbm.fit2$cv.error[min_MSE])
+
+
+# plot loss function 
+gbm.perf(gbm.fit2, method = "cv")
+
+```
+
+
+Manually tweaking each hyperparamters can be time consuming and less efficient than performing a grid seach which iterates over every combination of hyperparameter values and also allows to analyze which combination performs best.
+
+First we want to construct our grid of hyperparameter conditions. We are doing a grid search across 81 models with different learning rates and tree depths.
+
+
+```{r}
+# create hyperparameter grid
+hyper_grid <- expand.grid(
+  shrinkage = c(.01, .1, .3),
+  interaction.depth = c(1, 3, 5),
+  n.minobsinnode = c(5, 10, 15),
+  bag.fraction = c(.65, .8, 1), 
+  optimal_trees = 0,               # a place to dump results
+  min_RMSE = 0                     # a place to dump results
+)
+
+# total number of combinations
+nrow(hyper_grid)
+
+```
+
+Most of our top models use interaction.depth of 1 and a shrinkage of 0.30. The optimal trees are less than 15 for most of the top models. Comparing to the above models, the min_RMSE with the hyperparameter gave is lower by 0.06.
+
+```{r}
+# randomize data
+random_index <- sample(1:nrow(train_set), nrow(train_set))
+random_loan_train <- train_set[random_index, ]
+
+# grid search 
+for(i in 1:nrow(hyper_grid)) {
+  
+  # reproducibility
+  set.seed(525)
+  
+  # train model
+  gbm.tune <- gbm(
+    formula = Loan_Status ~ .,
+    distribution = "gaussian",
+    data = train_set,
+    n.trees = 5000,
+    interaction.depth = hyper_grid$interaction.depth[i],
+    shrinkage = hyper_grid$shrinkage[i],
+    n.minobsinnode = hyper_grid$n.minobsinnode[i],
+    bag.fraction = hyper_grid$bag.fraction[i],
+    train.fraction = .75,
+    n.cores = NULL, # will use all cores by default
+    verbose = FALSE
+  )
+  
+  # add min training error and trees to grid
+  hyper_grid$optimal_trees[i] <- which.min(gbm.tune$valid.error)
+  hyper_grid$min_RMSE[i] <- sqrt(min(gbm.tune$valid.error))
+}
+
+hyper_grid %>% 
+  dplyr::arrange(min_RMSE) %>%
+  head(10)
+```
+
+So for the next hyperparameter grid, we will be tuning some of the parameters. First we will lower 5000 number of trees to 30, because the values for optimal trees are all less than 30. Most of the shrinkage is show as 0.3 and 0.1. Interaction.depth are 1, 3, 5. The n.minobsinnode values are 5, 10, 15. The bag.fraction values are 0.65, 0.80, and 1.00. We will modify the new grid with these new values.
+
+```{r}
+## Modifying hyperparameter grid
+
+hyper_grid <- expand.grid(
+  shrinkage = c(.01, .3, .1),
+  interaction.depth = c(1, 3, 5),
+  n.minobsinnode = c(5, 10, 15),
+  bag.fraction = c(.65, .8, 1), 
+  optimal_trees = 0,               # a place to dump results
+  min_RMSE = 0                     # a place to dump results
+)
+
+# total number of combinations
+nrow(hyper_grid)
+
+
+```
+
+```{r}
+
+# grid search 
+for(i in 1:nrow(hyper_grid)) {
+  
+  # reproducibility
+  set.seed(525)
+  
+  # train model
+  gbm.tune <- gbm(
+    formula = Loan_Status ~ .,
+    distribution = "gaussian",
+    data = train_set,
+    n.trees = 30,
+    interaction.depth = hyper_grid$interaction.depth[i],
+    shrinkage = hyper_grid$shrinkage[i],
+    n.minobsinnode = hyper_grid$n.minobsinnode[i],
+    bag.fraction = hyper_grid$bag.fraction[i],
+    train.fraction = .75,
+    n.cores = NULL, # will use all cores by default
+    verbose = FALSE
+  )
+  
+  # add min training error and trees to grid
+  hyper_grid$optimal_trees[i] <- which.min(gbm.tune$valid.error)
+  hyper_grid$min_RMSE[i] <- sqrt(min(gbm.tune$valid.error))
+}
+
+hyper_grid %>% 
+  dplyr::arrange(min_RMSE) %>%
+  head(10)
+
+```
+
+
+
+###### Visualization
+
+Using the new modifications we are able to obtain our best model:
+shrinkage = 0.30, interaction.depth = 1, n.minobsinnode = 5, bag.fraction = 1.00, optimal_trees = 7. The min_RMSE for this model is 0.380. 
+
+
+```{r}
+# for reproducibility
+set.seed(525)
+
+# train GBM model
+gbm.fit.final <- gbm(
+  formula = Loan_Status ~ .,
+  distribution = "gaussian",
+  data = train_set,
+  n.trees = 7,
+  interaction.depth = 1,
+  shrinkage = 0.3,
+  n.minobsinnode = 5,
+  bag.fraction = 1, 
+  train.fraction = 1,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+  )  
+
+```
+
+
+
+```{r}
+
+par(mar = c(5, 8, 1, 1))
+summary(
+  gbm.fit.final, 
+  cBars = 10,
+  method = relative.influence, # also can use permutation.test.gbm
+  las = 2
+  )
+
+```
+
+We want to see which variables have the largest influence on Loan Status. We see Credit_History have the largest influence on Loan Status. 
+
+cBars allows you to adjust the number of variables to show (in order of influence).
+
+method = relative.influence: At each split in each tree, gbm computes the improvement in the split-criterion (MSE for regression). gbm then averages the improvement made by each variable across all the trees that the variable is used. The variables with the largest average decrease in MSE are considered most important.
+
+###### Predicting
+
+```{r}
+model_type.gbm <- function(x, ...) {
+  return("regression")
+}
+
+predict_model.gbm <- function(x, newdata, ...) {
+  pred <- predict(x, newdata, n.trees = x$n.trees)
+  return(as.data.frame(pred))
+}
+
+
+```
+
+
+```{r}
+# predict values for test data
+pred <- predict(gbm.fit.final, n.trees = gbm.fit.final$n.trees, train_set)
+
+train_set$Loan_Status<-as.numeric(train_set$Loan_Status)
+
+# results
+caret::RMSE(pred, train_set$Loan_Status)
+
+
+```
+
+Using the hyperparameter grid search as our final model, we want to use it to predict new observations. 
+
+
+
+
 #### Model Performance 
 
 #### Conclusions
@@ -648,6 +919,8 @@ Overall, the random forests model predicts approved loan applications well (`Loa
 1. Horst AM, Hill AP, Gorman KB (2020). *palmerpenguins: Palmer Archipelago (Antarctica) penguin data. R package version 0.1.0*. https://allisonhorst.github.io/palmerpenguins/. doi:10.5281/zenodo.3960218.
 2. Kuhn M, Johnson K (2013). *Applied Predictive Modeling*. Springer Science+Business Media.
 3. Wright MN, Wager S, Probst P (2020). *Package 'ranger'*. Accessed April 4, 2021 from https://cran.r-project.org/web/packages/ranger/ranger.pdf.
+
+4.UC Business Analytics R Programming Guide. http://uc-r.github.io/gbm_regression
 
 ### Code Appendix
 
