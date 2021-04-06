@@ -546,6 +546,7 @@ The final dataset contains `r nrow(loan_df)` records with `r ncol(loan_df)` colu
 ##### Train, Test, Split
 
 ```{r loan_tts}
+set.seed(525)
 which_train <- sample(x = c(TRUE, FALSE), 
                       size = nrow(loan_df), 
                       replace = TRUE, 
@@ -562,6 +563,62 @@ The three models will be trained on 70% of the dataset and validated on the rema
 
 ##### Model #2: Random Forest
 
+A classification ensemble method, the random forests algorithm seeks to address the challenge of tree correlation inherent to bagging decision trees. By linearly combining many individual, independent trees, it reduces variance in prediction. However, it also randomly selects predictor features at each split of each tree in the ensemble, which mitigates possible correlation. This combination makes it a strong performer in general.
+
+Random forests modeling starts with feature selection to assess feature importance in predicting `Loan_Status`. This selection is itself done via an implementation of random forests. While the results of this process do not inform the subsequent random forest model and its features--all features are included in that model--they offer a high-level check of importance.   
+
+```{r loanboruta}
+set.seed(525)
+output = Boruta(train_set$Loan_Status ~ ., data = train_set, doTrace = 0)  
+roughFixMod = TentativeRoughFix(output)
+importance = attStats(TentativeRoughFix(output))
+importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
+kable(head(importance[order(-importance$meanImp), ])) %>%
+  kable_styling(bootstrap_options = "striped", full_width = TRUE)
+```
+
+Four features perform at least as well as the best performing randomized feature. With a mean importance of approximately 52.17, `Credit_History` represents the most important in predicting `Loan_Status`. The latter three--`CoapplicantIncome`,`ApplicantIncome`, and `Property_Area`--trail far behind.
+
+EDA revealed that the numeric features, which all describe dollar amounts, skewed rightward. In attempts to address that skewness, the features undergo the Box-Cox transformation and subsequent normalization prior to modeling.
+
+```{r loantransform}
+train_set <- train_set %>% select(c("ApplicantIncome","CoapplicantIncome","LoanAmount","Loan_Amount_Term")) %>% preProcess(method = c("BoxCox", "center", "scale")) %>% predict(train_set)
+test_set <- test_set %>% select(c("ApplicantIncome","CoapplicantIncome","LoanAmount","Loan_Amount_Term")) %>% preProcess(method = c("BoxCox", "center", "scale")) %>% predict(test_set)
+```
+
+As noted, the random forests model incorporates all possible features, including dummies associated with the levels of factors like `Gender`, `Education`, and `Property_Area`. The sole tuning parameter for this implementation in *caret* is $m_{try}$, which refers to the number of randomly selected features to be chosen at each tree split and has been shown to affect model accuracy. A vector of $m_{try}$ values from 2 through 10 is provided for grid search. The number of trees in the forest ensemble is another general parameter, though one considered less important by Kuhn and Johnson, who suggest 1000 trees as a reasonable number (2013). Lastly, a 10-fold cross-validation scheme is repeated three times to create the final model.
+
+```{r rf}
+set.seed(525)
+(loan_rf <- train(Loan_Status ~ .,
+                  data = train_set,
+                  method = "ranger",
+                  metric = "Accuracy",
+                  num.trees = 1000,
+                  importance = "impurity",
+                  tuneGrid = expand.grid(.mtry=c(2:10), .min.node.size=1, .splitrule="gini"),
+                  trControl = trainControl(method = "repeatedcv", number = 10, repeats = 3, allowParallel = TRUE, classProbs = TRUE)))
+```
+
+Optimizing accuracy at approximately 0.791, the final model used three features at each split ($m_{try}$ = 4). The plot below depicts differences in accuracy across $m_{try}$ values.
+
+```{r rfplot}
+plot(loan_rf, main = "Optimal mtry value of 4 (Accuracy ~ 0.791)")
+```
+
+Considering feature importance, `Credit_History1`, representing rows with a credit history, is important in all trees, just as it was the most important in initial feature selection. `ApplicantIncome` (~ 66.08), `LoanAmount` (~ 61.36), `CoapplicantIncome` (~ 37.61), and `Loan_Amount_Term` (~ 15.49) are also relatively important, though none of them were notably so initially. In sum, given these data, an individual's having a credit history is clearly the most important predictor of loan receipt, whereas other predictors are a mixed bag.
+
+```{r}
+varImp(loan_rf, scale = TRUE)
+```
+
+Predicting `Loan_Status` for the test set returns an accuracy of approximately 0.835 with $\kappa$ of approximately 0.56. These values both exceed their training set counterparts, which is surprising. It could simply result from sampling, though further investigation--beyond this exercise--seems warranted.
+
+```{r}
+loan_rf_pred <- predict(loan_rf, newdata = test_set)
+postResample(pred = loan_rf_pred, obs = test_set$Loan_Status)
+```
+
 ##### Model #3: Gradient Boosting
 
 #### Model Performance 
@@ -572,6 +629,8 @@ The three models will be trained on 70% of the dataset and validated on the rema
 ### Works Cited
 
 1. Horst AM, Hill AP, Gorman KB (2020). *palmerpenguins: Palmer Archipelago (Antarctica) penguin data. R package version 0.1.0*. https://allisonhorst.github.io/palmerpenguins/. doi:10.5281/zenodo.3960218.
+2. Kuhn M, Johnson K (2013). *Applied Predictive Modeling*. Springer Science+Business Media.
+3. Wright MN, Wager S, Probst P (2020). *Package 'ranger'*. Accessed April 4, 2021 from https://cran.r-project.org/web/packages/ranger/ranger.pdf.
 
 ### Code Appendix
 
