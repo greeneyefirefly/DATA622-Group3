@@ -608,16 +608,33 @@ plot(loan_rf, main = "Optimal mtry value of 4 (Accuracy ~ 0.791)")
 
 Considering feature importance, `Credit_History1`, representing rows with a credit history, is important in all trees, just as it was the most important in initial feature selection. `ApplicantIncome` (~ 66.08), `LoanAmount` (~ 61.36), `CoapplicantIncome` (~ 37.61), and `Loan_Amount_Term` (~ 15.49) are also relatively important, though none of them were notably so initially. In sum, given these data, an individual's having a credit history is clearly the most important predictor of loan receipt, whereas other predictors are a mixed bag.
 
-```{r}
+```{r rfimportance}
 varImp(loan_rf, scale = TRUE)
 ```
 
 Predicting `Loan_Status` for the test set returns an accuracy of approximately 0.835 with $\kappa$ of approximately 0.56. These values both exceed their training set counterparts, which is surprising. It could simply result from sampling, though further investigation--beyond this exercise--seems warranted.
 
-```{r}
+```{r rfpred}
 loan_rf_pred <- predict(loan_rf, newdata = test_set)
 postResample(pred = loan_rf_pred, obs = test_set$Loan_Status)
 ```
+
+Unfortunately, `Loan_Status` is not well balanced across classes. Specifically, the data set contains roughly twice as many "Y" values as there are "N" values. This imbalance suggests that accuracy may not be the best measure of the random forest model's predictive performance. In response, a confusion matrix and other evaluative measures are run on the predictions. 
+
+```{r rfmatrix}
+(confusionMatrix(loan_rf_pred, test_set$Loan_Status, mode = "everything", positive = "Y"))
+```
+
+The confusion matrix shows poor performance in predicting loan application rejections ("N"), with a specificity, or true negative rate, of approximately 0.553. By comparison, the sensitivity, or true positive rate, is quite high, at approximately 0.955. Combining the two measures, the balanced accuracy of approximately 0.754 is middling. Below, an ROC curve carries an associated AUC value of approximately 0.754, which, again, is just okay.
+
+```{r rfroc}
+loan_rf_predictions <- cbind(test_set, loan_rf_pred = as.numeric(loan_rf_pred))
+loan_rf_roc <- roc(loan_rf_predictions, Loan_Status, loan_rf_pred)
+auc(loan_rf_roc)
+plot.roc(loan_rf_roc, main = "AUC ~ 0.754")
+```
+
+Overall, the random forests model predicts approved loan applications well (`Loan_Status` = "Y") and rejected applications poorly (`Loan_Status` = "N"). It suffers from class imbalance in the available data, and this imbalance is felt in spite of cross-validation. Having additional observations for the negative class would be ideal, but otherwise, an extension of this extension should consider resampling the training set--perhaps over-sampling the negative class or testing additional resamples--to promote better balance across `Loan_Status` classes.
 
 ##### Model #3: Gradient Boosting
 
