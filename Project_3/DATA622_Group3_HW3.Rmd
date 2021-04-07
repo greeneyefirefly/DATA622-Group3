@@ -30,6 +30,7 @@ library(Boruta)
 library(pROC)
 library(rsample)
 library(gbm)
+library(lime)         
 ```
 
 ## Overview {.tabset .tabset-fade .tabset.-pills}
@@ -640,6 +641,29 @@ Overall, the random forests model predicts approved loan applications well (`Loa
 
 ##### Model #3: Gradient Boosting
 
+  Gradient boosted machines build an ensemble of shallow and weak successive trees with each tree learning and improving on the previous. When combined, these many weak successive trees produce a powerful “committee” that are often hard to beat with other algorithms. The advantages of GBM are it provides predictive accuracy, lots of flexibility with hyperparameter tuning options, works well with categorical and numerical values and can handle missing data. The disadvantages of GBM can be overfitting due to constant error minimization and requires many trees which can be time consuming and memory intensive. Results might be less interpretable unless used with other tools like variable importance, partial dependence plots, LIME. 
+
+  Boosting works by adding new models to the ensemble sequentially. At each particular iteration, a new weak, base-learner model is trained with respect to the error of the whole ensemble learnt so far. GBM starts with base-learning models, then training weak models and followed up with sequential training with respect to errors. The following is explained more in detail on the process.
+
+Base-learning models: Boosted algorithms almost always use decision trees as the base-learner. We will be using boosting in the context of regression trees.
+
+Training weak models: A weak model is one whose error rate is only slightly better than random guessing. The idea behind boosting is that each sequential model builds a simple weak model to slightly improve the remaining errors. Commonly, trees with only 1-6 splits are used. Combining many weak models increases speed, accuracy improvement, and avoids overfitting.
+
+Sequential training with respect to errors: Boosted trees are grown sequentially; each tree is grown using information from previously grown trees. The basic algorithm for boosted regression trees can be generalized to the following where x represents our features and y represents our response:
+
+1) Fit a decision tree to the data: F1(x)=yF1(x)=y,
+
+2) We then fit the next decision tree to the residuals of the previous: h1(x)=y−F1(x)h1(x)=y−F1(x),
+
+3) Add this new tree to our algorithm: F2(x)=F1(x)+h1(x)F2(x)=F1(x)+h1(x),
+
+4) Fit the next decision tree to the residuals of F2F2: h2(x)=y−F2(x)h2(x)=y−F2(x),
+
+5) Add this new tree to our algorithm: F3(x)=F2(x)+h1(x)F3(x)=F2(x)+h1(x),
+
+6) Continue this process until some mechanism (i.e. cross validation) tells us to stop.
+
+
 
 ```{r}
 
@@ -679,6 +703,14 @@ gbm.perf(gbm.fit, method = "cv")
 We see that the CV error starts leveling off at 2648 trees. Here, we see that the minimum CV RMSE is 0.4055994 (this means on average our model is about 0.4055994 off from the actual loan status)
 
 ###### Tuning
+
+Tuning of GBM:
+
+Number of trees: The total number of trees to fit. GBMs often require many trees
+Depth of trees: The number d of splits in each tree, which controls the complexity of the boosted ensemble. Each tree is a stump consisting of a single split. 
+Learning rate: Controls how quickly the algorithm proceeds down the gradient descent. Smaller values reduce the chance of overfitting but also increases the time to find the optimal fit. This is also called shrinkage.
+Subsampling: Controls whether or not you use a fraction of the available training observations. This can help to minimize overfitting 
+
 
 ```{r}
 # for reproducibility
@@ -891,6 +923,20 @@ predict_model.gbm <- function(x, newdata, ...) {
 
 ```
 
+###### Lime
+
+```{r}
+# get a few observations to perform local interpretation on
+local_obs <- test_set[1:2, ]
+
+# apply LIME
+explainer <- lime(train_set, gbm.fit.final)
+explanation <- explain(local_obs, explainer, n_features = 5)
+plot_features(explanation)
+```
+
+
+Using LIME to understand why a prediction resulted in a given value for a single observation. We will select two observations from test_set. The results show the predicted value of Case 2: 1.74 and Case 6: 1.74, the model fit is pretty good and the most influential variables driving the predicted value for each observation, Credit_History. 
 
 ```{r}
 # predict values for test data
