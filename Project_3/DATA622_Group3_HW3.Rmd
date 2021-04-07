@@ -30,7 +30,11 @@ library(Boruta)
 library(pROC)
 library(rsample)
 library(gbm)
-library(lime)         
+library(lime) 
+library(party)
+library(partykit)
+library(rpart)
+library(rpart.plot)
 ```
 
 ## Overview {.tabset .tabset-fade .tabset.-pills}
@@ -563,6 +567,124 @@ The three models will be trained on 70% of the dataset and validated on the rema
 
 
 ##### Model #1: Decision Trees
+What is a decision tree? 
+Decision tree is a machine learning algorithm that is very versatile that is able to perform classification and regression tasks.
+When it comes to a decision tree there are important terms that one should know which are: 
+
+- root nodes - they represent the whole population or sample, which then gets divided within two or more. 
+- splitting - is when the nodes get divided into two or more
+- decision node - when a sub node splits
+- terminal or leaf - when the node no longer splits
+- branch - sub-section of the entire tree
+- parent-node - is when a node is divided into sub-nodes
+
+
+
+### Loan Data Feature Selection for Decision Tree
+
+- Lets look at the features of the data set by using the Boruta function and calculating the mean importance.
+
+```{r loanboruta, message=FALSE, warning=FALSE}
+set.seed(525)
+output = Boruta(train_set$Loan_Status ~ ., data = train_set, doTrace = 0)  
+roughFixMod = TentativeRoughFix(output)
+importance = attStats(TentativeRoughFix(output))
+importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
+kable(head(importance[order(-importance$meanImp), ])) %>%
+  kable_styling(bootstrap_options = "striped", full_width = TRUE)
+```
+
+
+By looking at this we can see that the biggest feature in the data is Credit History with a mean imp that is above 50. Credit_History is definitely an important feature because it allows one to know if one pays for their bills on time, or if they are generally late with their payments. The feature that follow are important but don't have the same mean importance is ApplicantIncome and CoapplicantIncome. Which its understandable why those two features would be important when it comes to loans is because one would want to make sure that there is enough income to pay for the loan.  
+
+
+
+### Plot the Decision Trees 
+
+In order to create the decision tree we will use the rpart package to calculate, and rpart.plot package to plot it.
+
+```{r fig.height=10, fig.width=10}
+dt_loan_model1 <- rpart(Loan_Status ~., data = train_set, method = 'class')
+rpart.plot(dt_loan_model1 )
+```
+
+This shows us that 68% of people have a credit history
+
+
+##### Error Rate of the Model 
+
+```{r}
+plotcp(dt_loan_model1)
+```
+
+This shows the error rate of the model and it is of the complexity parameter. 
+
+```{r}
+print(dt_loan_model1$cptable)
+```
+
+Looking at the error one can see that the best complexity parameter is at .016, because the xerror is at its lowest at .584. we will use the cp in the next model to see if there is an improvement in the decision tree and also compare the confusion matrix. The complexity parameter allows one to choose the optimal tree size. 
+
+### Confusion Matrix of first Decision Tree
+
+```{r}
+unseen_prediction <-predict(dt_loan_model1, test_set, type = 'class')
+
+confusionMatrix(table(unseen_prediction , test_set$Loan_Status))
+```
+
+Here you can see there is an accuracy rate of 76%, kappa is at 38%. Looking at the prediction you can see that 6 false postives, and 23 false negatives, while 78 are predicted correctly as Y and 16 as no.
+
+
+### Decision Tree with Hyperparameters 
+
+For this decision tree model we are going to include the complexity parameter of .016 as a hyperparameter which was obtained from the first model. One might wonder how does using complexity parameter change the decision tree. By looking at the decision tree plot you can see that it is a drastic change. 
+
+```{r}
+dt_loan_model2 <- rpart(Loan_Status ~.,
+                   method="class",
+                   data=train_set,
+                   control=rpart.control( cp= 0.016 ),
+                   parms=list(split='information'))
+
+rpart.plot(dt_loan_model2)
+```
+This only showcases Credit_History as the most important feature, which its not surprising since the mean importance was so high that no other feature was even close.  
+
+
+##### Error Rate of the Model 
+
+```{r}
+plotcp(dt_loan_model2)
+```
+
+The Error rate of this model is just a straight line. 
+
+
+### Confusion Matrix of Second Model
+
+
+```{r}
+unseen_prediction1 <-predict(dt_loan_model2, test_set, type = 'class')
+
+confusionMatrix(table(unseen_prediction1, test_set$Loan_Status))
+```
+
+The accuracy has improved after using the complexity parameter, you can see that the accuracy is at 79%, and Kappa is at 45%. The false positive is only 2, and the false negative is at 23, which didn't change from the original. But it correctly predicted 82. Based on this you can see that the best model is the one with the hyperparameter with the complexity parameter.
+
+
+### Conditional Parting Plot 
+
+This shows regression relationship of the conditional inference trees estimate that is partitioned by binary recursive in a  framework that is conditional inference. The package used for this is he party package and the partykit package, and the ctree function is used.
+
+
+```{r}
+ctree_<-ctree(Loan_Status ~.,data=train_set)
+plot(ctree_)
+```
+
+You can see again that credit history is the most important feature. Here you can see that n=62 is the number without a credit history, and n=326 is the number with a credit history. 
+
 
 ##### Model #2: Random Forest
 
@@ -965,8 +1087,12 @@ Using the hyperparameter grid search as our final model, we want to use it to pr
 1. Horst AM, Hill AP, Gorman KB (2020). *palmerpenguins: Palmer Archipelago (Antarctica) penguin data. R package version 0.1.0*. https://allisonhorst.github.io/palmerpenguins/. doi:10.5281/zenodo.3960218.
 2. Kuhn M, Johnson K (2013). *Applied Predictive Modeling*. Springer Science+Business Media.
 3. Wright MN, Wager S, Probst P (2020). *Package 'ranger'*. Accessed April 4, 2021 from https://cran.r-project.org/web/packages/ranger/ranger.pdf.
+4. UC Business Analytics R Programming Guide. http://uc-r.github.io/gbm_regression
+5. DataCamp.What are the hyperparameters for a decision tree?. https://campus.datacamp.com/courses/tree-based-models-in-r/regression-trees?ex=7
+6. datascievo. Decision Tree in R | A Real Guide on Titanic Dataset with Code. https://www.datascievo.com/decision-tree-in-r/ 
+7. Guru99. Decision Tree in R | Classification Tree & Code in R with Example. https://www.guru99.com/r-decision-trees.html
+8. DataFlair. R Decision Trees – The Best Tutorial on Tree Based Modeling in R!. https://data-flair.training/blogs/r-decision-trees/
 
-4.UC Business Analytics R Programming Guide. http://uc-r.github.io/gbm_regression
 
 ### Code Appendix
 
