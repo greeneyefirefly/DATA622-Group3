@@ -17,7 +17,7 @@ knitr::opts_chunk$set(echo=FALSE, error = FALSE, warning = FALSE, message = FALS
 
 ## R Packages
 
-The statistical tool that was used to facilitate the modeling of the data is `R`. The main packages used for data wrangling, visualization, and graphics were listed below.
+The `R` language is used to facilitate data modeling. The main `R` packages used for data wrangling, visualization, and graphics are listed below.
 
 ```{r libraries, echo=TRUE}
 # Required R packages
@@ -43,10 +43,10 @@ library(rpart.plot)
 
 In this project, there are two analyses carried out using two different datasets: 1) the Palmer Penguins dataset and 2) a Loan Approvals dataset. Thus, this project is divided into two sections accordingly. 
 
-Section 1, Palmer Penguins, investigates K-nearest neighbor (KNN) algorithm to predict the species variable, and it is compared to previous five multi-classification models, namely multinomial logistic regression, linear discriminant analysis, quadratic discriminant analysis, and Naive Bayes classification models.
+Section 1, Palmer Penguins, investigates K-Nearest Neighbor (KNN) algorithm to predict species of penguin, and it is compared to previous five multi-classification models, namely Multinomial Logistic Regression, Linear Discriminant Analysis (LDA), Quadratic Discriminant Analysis (QDA), and Naive Bayes classification models.
 
 Section 2, Loan Approval, a dataset on loan approval status is used to predict loan approval using
-Decision Trees, Random Forests, and Gradient Boosting. Each analysis is conducted with a thorough explanation of the reasoning behind all the steps taken. In the end, there is a comparison of the model performance and the optimal model is selected.
+Decision Trees, Random Forests, and Gradient Boosting Machines (GBM). Each analysis is conducted with a thorough explanation of the reasoning behind all the steps taken. In the end, there is a comparison of the model performance and the optimal model is selected.
 
 The last two sections present references used during this analysis, and the written R codes in a technical appendx.
 
@@ -84,7 +84,7 @@ ntrobs = dim(penguins)[[1]]
 penguins$year = as.factor(penguins$year)
 ```
 
-From the previous data exploration, it found that the response variable, `species` denotes one of three penguin species, and a majority of the penguins are Adelie (n = 153), followed by Gentoo (n = 124) and Chinstrap (n = 68). The distribution between gender is nearly equally divided among the species but not for their island habitat. 
+The previous data exploration found that the response variable `species` denotes one of three penguin species, and a majority of the penguins are Adelie (n = 153), followed by Gentoo (n = 124) and Chinstrap (n = 68). The distribution between gender is nearly equally divided among the species but not for their island habitat. 
 
 ```{r pengdist, fig.width=8}
 reorder <- function(x){
@@ -110,7 +110,7 @@ ggplot(drop_na(penguins), aes(x = reorder(species), fill = species)) +
   labs(title = "Distibution of Species by Island Habitat", y = "Frequency", x = "Species")
 ```
 
-There were `r ntrobs` observations of 4 numeric predictor variables and 2-factor predictor variables, namely `island`, and `sex`.  There is also a `year` variable that is ignored in this analysis. The data set did not have complete cases, and there is a presence of bi- and tri-modal distributions which suggests that there are differences among the penguin species. 
+There were `r ntrobs` observations of 4 numeric predictor variables and 2-factor predictor variables, namely `island`, and `sex`.  There is also a `year` variable that is ignored in this analysis. The data set did not have complete cases, and there is a presence of bi- and tri-modal distributions, which suggests that there are differences among the penguin species. 
 
 Lastly, it is noted that Adelie and Chinstrap measurements overlap for all variables except bill length. This feature is a definitive variable that produces complete separation among the penguin species into groups. This perfectly discriminating variable will be removed to get a reasonable estimate for the variables that can predict the outcome variable.
 
@@ -120,7 +120,7 @@ dfSummary(penguins, plain.ascii = TRUE, style = "grid", graph.col = FALSE, footn
 
 #### Data Preparation 
 
-The summary above indicates the amount of missing data the penguin data contains. It appears that more than 3% of the missing data was from the `sex` variable. This further suggests that nearly 97% were complete. There were no missingness patterns, and their overall proportion was not very extreme. As a result, missingness can be corrected by imputation.
+The summary above indicates the amount of missing data in the penguin dataset. It appears that more than 3% of the missing data was from the `sex` variable. This further suggests that nearly 97% were complete. There were no missingness patterns, and their overall proportion was not very extreme. As a result, missingness can be corrected by imputation.
 
 Further exploration revealed that no variable seems to be strongly influenced by any outliers. An outlier is an observation that lies an abnormal distance from other values in a random sample. Outliers in the data could distort predictions and affect the accuracy, therefore, these would need to be corrected. 
 
@@ -153,7 +153,7 @@ test_peng.r = penguins$species[-intrain]
 
 ##### Pre-Processing of Predictors
 
-Missing data are treated by imputation. The classification and regression trees (CART) missing data algorithm was implemented because this could handle mixed types of missing data, and adaptable to interactions and non-linearity. 
+Missing data are treated by imputation using the classification and regression trees (CART) missing data algorithm. CART can handle mixed types of missing data and is adaptable to interactions and non-linearity. 
 
 ```{r pengprepro}
 set.seed(525)
@@ -166,7 +166,7 @@ test_peng.p = complete(temp)
 
 ##### Dummy Variables
 
-The categorical variables are then dummyfied. For instance, in the variable `sex`, the female will be used as the reference, whereas in the `island` variable, Biscoe island will be used as the reference.
+The categorical variables are then made sets of dummy variables. For instance, in the variable `sex`, the female will be used as the reference, whereas in the `island` variable, Biscoe island will be used as the reference.
 
 ```{r pengdummyVars}
 set.seed(525)
@@ -210,7 +210,7 @@ All in all, the following decisions were made based on the feature selection inv
 
 ##### Normality & Linearity 
 
-The data were then pre-processed to fulfill the assumption of normality, i.e. each quantitative variable $~N(\mu,\sigma) = (0,1)$ by centering and scaling. Normalization ensures that each variable has equal influence when calculating the Euclidean distance, else a variable with a larger scale would add bias to calculation.
+The data were then pre-processed to fulfill the assumption of normality, i.e., each quantitative variable $~N(\mu,\sigma) = (0,1)$ by centering and scaling. Normalization ensures that each variable has equal influence when calculating the Euclidean distance, else a variable with a larger scale would add bias to calculation.
 
 ```{r normality}
 set.seed(525)
@@ -225,9 +225,9 @@ test_peng.p = predict(processed_test_peng, test_peng.p)
 
 #### Building the KNN Model
 
-K-Nearest Neighbor classification works such that for each row of the test set, the k nearest (in Euclidean distance) training set vectors are found, and the classification is decided by majority vote, with ties broken at random.
+KNN classification works such that for each row of the test set, the k nearest (in Euclidean distance) training set vectors are found, and the classification is decided by majority vote, with ties broken at random.
 
-With the decision on the features set, there is no need to perform stepwise elimination to account for the best predictors, thus to optimize each model, 10 repeats of 10-fold cross-validation is performed. With accuracy being the decision metric for the best performing model, there are 10 repeats of the 10-fold cross-validation. By doing this, the training set is divided randomly into 10 parts and then each of 10 parts is used as a testing set for the model trained on other the 9. Then the average of the 10 error terms is obtained by performing the 10-fold CV ten times. The advantage of a repeated hold-out instead of a k-fold is that there is more control.
+With the decision on the features set, there is no need to perform stepwise elimination to account for the best predictors. To optimize each model, using accuracy as the criterion, 10 repeats of 10-fold cross-validation (CV) are performed. In this scheme, the training set is divided randomly into 10 parts and then each of 10 parts is used as a testing set for the model trained on other the 9. Then the average of the 10 error terms is obtained by performing the 10-fold CV ten times. A repeated hold-out offers greater control than a simple k-fold.
 
 ```{r pengknn}
 set.seed(525)
@@ -250,7 +250,7 @@ plot(varImp(knnModel), main = "Rank of Most Important Variable")
 
 #### Model Discussion 
 
-The best tune for the KNN model which resulted in the largest accuracy is k = 5. It has accuracy = 80.5%, and $\kappa$ = 0.69. This tune accounts for the largest portion of the variability in the data than all other latent variables. Moreover, the variable that contributed the most to identifying Adelie and Gentoo is the flipper length, while bill depth was the most important variable to help classify Chinstrap. From the results based on the test data, the KNN model did exceptionally well in classifying the test set. Thus, the optimal model has an accuracy of 80.4% and $\kappa$ = 0.68 on the test set. 
+Per accuracy, the best tune for the KNN model is k = 5. It has accuracy = 80.5%, and $\kappa$ = 0.69. This tune accounts for the largest portion of the variability in the data than all other latent variables. Moreover, the variable that contributed the most to identifying Adelie and Gentoo is the flipper length, while bill depth was the most important variable to help classify Chinstrap. From the results based on the test data, the KNN model did exceptionally well in classifying the test set. Thus, the optimal model has an accuracy of 80.4% and $\kappa$ = 0.68 on the test set. 
 
 In terms of the confusion matrix, the results suggest that 80.4% of the predicted results seem to be correctly classified. The precision for each type of species is also high (Adelie = 74%, Chinstrap = 54%, and Gentoo = 100%), suggesting that the penguins belong to the actual species among all the penguins predicted to be that particular species, with Gentoos being classified correctly 100% of the time. Moreover, the recall highlights that 87% of the Adelie species have been correctly classified accordingly, whereas 35% of the Chinstrap species have been correctly classified, and 97% of the Gentoo species have been correctly classified. In all, this model is capable of classifying penguins into one of the three species with great accuracy, particularly Gentoo species which was expected as their measurements were quite different. And lastly, the Kappa statistic of 0.68 suggests that the overall accuracy of this model is better than the expected random chance classifier's accuracy.
 
@@ -283,7 +283,7 @@ legend("bottomright",
 
 #### Conclusion
 
-Given the `palmerpenguins` dataset, five multi-classification models, namely multinomial logistic regression, linear discriminant analysis, quadratic discriminant analysis, Naive Bayes, and K-nearest neighbor models were fitted. From previous analyses, each model had its strengths and weakness on the same cleaned training dataset, and in the end, the results were as follows:
+Given the `palmerpenguins` dataset, five multi-classification models, namely multinomial logistic regression, LDA, QDA, Naive Bayes, and KNN models were fitted. From previous analyses, each model had its strengths and weakness on the same cleaned training dataset, and in the end, the results were as follows:
 
 Model | Accuracy
 ------|------
@@ -300,7 +300,7 @@ Of all the classification models used to classify the penguin species, the Naive
 ### Loan Approval 
 
 #### Data Exploration 
-The **loan approval** dataset will be used for the remaining models. 
+The `loan approval` dataset will be used for the remaining models. 
 
 *Loan Approvals Data Column Definition*
 
