@@ -7,3 +7,5 @@ Collaborators:
 [Amber Ferger](https://github.com/amberferger)  
 [Tony Mei](https://github.com/Sizzlo)   
 [Charlie Rosemond](https://github.com/chrosemo) 
+
+Our published work can be found on [RPub](https://rpubs.com/greeneyefirefly/data622-project3).
