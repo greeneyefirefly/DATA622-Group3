@@ -596,7 +596,7 @@ kable(head(importance[order(-importance$meanImp), ]),
   kable_styling(bootstrap_options = "striped", full_width = TRUE)
 ```
 
-Four features perform at least as well as the best performing randomized feature. By looking at the table, the most contributing feature in the data is `Credit-History` with a mean importance of approximately 52.17. `Credit_History` has already been suggestive of its importance from the variable exploration, and it is the feature that allows loan givers judge if individuals can pay for their bills on time, or if they are generally late with their payments. The other importance features that follow are `ApplicantIncome` and `CoapplicantIncome`, which is understandable as when it comes to loans, loan givers would want to reassurance that the individuals have enough income to repay for the loan.  
+Four features perform at least as well as the best performing randomized feature. By looking at the table, the most contributing feature in the data is `Credit-History` with a mean importance that is above 50. `Credit_History` has already been suggestive of its importance from the variable exploration, and it is the feature that allows loan givers judge if individuals can pay for their bills on time, or if they are generally late with their payments. The other importance features that follow are `ApplicantIncome` and `CoapplicantIncome`, which is understandable as when it comes to loans, loan givers would want to reassurance that the individuals have enough income to repay for the loan.  
 
 #### Normality & Linearity
 
@@ -638,7 +638,7 @@ rpart.plot(dt_loan_model1)
 
 The best first split is the one that provides the most information gain, and it shows that credit history plays an important role in the loan approval decision. 
 
-In addition, this plot below shows the error rate of the model and it is of the complexity parameter (cp). Looking at the error, the best complexity parameter is at 0.01, because the x-error is at its lowest at 0.61. Moreover, in terms of the confusion matrix, the decision tree model resulted in an accuracy rate of 80.4% and $\kappa$ at 48% on the test set. Looking at the predictions, there are 13 false positives, and 22 false negatives, while 98 are predicted correctly as an approved loan and 25 as no loan approval.
+In addition, this plot below shows the error rate of the model and it is of the complexity parameter (cp). Looking at the error, the best complexity parameter is at 0.01, because the x-error is at its lowest at 0.61. Moreover, in terms of the confusion matrix, (at the time that this was run) the decision tree model resulted in an accuracy rate of 80.4% and $\kappa$ at 48% on the test set. Looking at the predictions, there are 13 false positives, and 22 false negatives, while 98 are predicted correctly as an approved loan and 25 as no loan approval.
 
 ```{r loan_dt_plot, fig.height=4}
 plotcp(dt_loan_model1)
@@ -680,7 +680,7 @@ dt.model = train(Loan_Status ~.,
 
 This only showcases `Credit_History` as the most important feature, which is not surprising since the mean importance was so high that no other feature was even close.  
 
-The error rate of this model is just a straight line, and the accuracy and kappa statistic have improved after using the complexity parameter, accuracy = 82.9% and $\kappa$ = 0.52. The false positive is only 2, and the false negative is at 22. The improved model did better at predicting the loan approval status than the base decision tree model.
+The error rate of this model is just a straight line, and the accuracy and kappa statistic have improved after using the complexity parameter, accuracy = 82.9% and $\kappa$ = 0.52. The false positive is only 2, and the false negative is at 22.(at the time this was run) The improved model did better at predicting the loan approval status than the base decision tree model.
 
 ```{r loan_dt_CMx2}
 unseen_prediction1 <-predict(dt.model, test_set, type = 'raw')
@@ -689,7 +689,7 @@ confusionMatrix(table(unseen_prediction1, test_set$Loan_Status))
 
 ##### Conditional Parting Plot 
 
-Lastly, the plot below show the regression relationship of the conditional inference trees estimate that is partitioned by binary recursive in a framework that is conditional inference. It shows that credit history is the most important feature. Here you can see that, and that n = 62 is the number without a credit history, and n = 326 is the number with a credit history. 
+Lastly, the plot below show the regression relationship of the conditional inference trees estimate that is partitioned by binary recursive in a framework that is conditional inference. It shows that credit history is the most important feature. Here you can see that, and that n = 56 is the number without a credit history, and n = 297 is the number with a credit history. 
 
 ```{r loan_dt_ctree}
 set.seed(525)
