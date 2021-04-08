@@ -3,8 +3,11 @@ title: "CUNY SPS DATA 622 - Machine Learning and Big Data"
 subtitle: 'Spring 2021 - Group 3 - Homework 3'
 author: "Maryluz Cruz, Samantha Deokinanan, Amber Ferger, Tony Mei, and Charlie Rosemond"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
-output:
-  html_document
+output: 
+  html_document:
+    theme: cerulean
+    highlight: pygments
+    toc: 3
 urlcolor: purple
 ---
 
@@ -14,7 +17,7 @@ knitr::opts_chunk$set(echo=FALSE, error = FALSE, warning = FALSE, message = FALS
 
 ## R Packages
 
-The statistical tool that will be used to facilitate the modeling of the data was `R`. The main packages used for data wrangling, visualization, and graphics were listed below.
+The statistical tool that was used to facilitate the modeling of the data is `R`. The main packages used for data wrangling, visualization, and graphics were listed below.
 
 ```{r libraries, echo=TRUE}
 # Required R packages
@@ -30,7 +33,6 @@ library(Boruta)
 library(pROC)
 library(rsample)
 library(gbm)
-library(lime) 
 library(party)
 library(partykit)
 library(rpart)
@@ -39,6 +41,14 @@ library(rpart.plot)
 
 ## Overview {.tabset .tabset-fade .tabset.-pills}
 
+In this project, there are two analyses carried out using two different datasets: 1) the Palmer Penguins dataset and 2) a Loan Approvals dataset. Thus, this project is divided into two sections accordingly. 
+
+Section 1, Palmer Penguins, investigates K-nearest neighbor (KNN) algorithm to predict the species variable, and it is compared to previous five multi-classification models, namely multinomial logistic regression, linear discriminant analysis, quadratic discriminant analysis, and Naive Bayes classification models.
+
+Section 2, Loan Approval, a dataset on loan approval status is used to predict loan approval using
+Decision Trees, Random Forests, and Gradient Boosting. Each analysis is conducted with a thorough explanation of the reasoning behind all the steps taken. In the end, there is a comparison of the model performance and the optimal model is selected.
+
+The last two sections present references used during this analysis, and the written R codes in a technical appendx.
 
 ***
 <center> **PROJECT SECTIONS** </center>
@@ -154,21 +164,6 @@ temp = mice(test_peng.p, method = 'cart', print = FALSE, m = 3, maxit = 3)
 test_peng.p = complete(temp)
 ```
 
-##### Normality & Linearity 
-
-The data were then pre-processed to fulfill the assumption of normality by centering and scaling.
-
-```{r normality}
-set.seed(525)
-# Train set
-processed_train_peng = preProcess(train_peng.p)
-train_peng.p = predict(processed_train_peng, train_peng.p)
-
-# Test set
-processed_test_peng = preProcess(test_peng.p)
-test_peng.p = predict(processed_test_peng, test_peng.p)
-```
-
 ##### Dummy Variables
 
 The categorical variables are then dummyfied. For instance, in the variable `sex`, the female will be used as the reference, whereas in the `island` variable, Biscoe island will be used as the reference.
@@ -192,31 +187,47 @@ test_peng.p$island = factor(test_peng.p$island)
 
 ##### Feature Selection
 
-To identify which features are important when building predictive model, feature selection is conducted to assist in choosing variables that are useful in predicting the response. The possible features that are impactful to classifying penguin species are listed below. This was done by using the random forest algorithm to performs a top-down search for relevant features and comparing the original attributes' importance with the importance achievable at random. It shows that `bill_length_mm` is indeed the most contributing variable followed by `flipper_length_mm`, and so on. 
+To identify which features are important when building a predictive model, feature selection is conducted to assist in choosing variables that are useful in predicting the response. The possible features that have the most impact on classifying penguin species are listed below. This was done by using the random forest algorithm to performs a top-down search for relevant features and comparing the original attributes' importance with the importance achievable at random. It shows that `bill_length_mm` is indeed the most contributing variable followed by `flipper_length_mm`, and so on. 
 
 ```{r pengboruta}
 output = Boruta(train_peng.r ~ ., data = train_peng.p, doTrace = 0)  
 roughFixMod = TentativeRoughFix(output)
 importance = attStats(TentativeRoughFix(output))
 importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
-kable(head(importance[order(-importance$meanImp), ])) %>%
+kable(head(importance[order(-importance$meanImp), ]), 
+      caption = "Feature Importance of Penguin Data") %>%
   kable_styling(bootstrap_options = "striped", full_width = TRUE)
 ```
 
-All in all, the following decision were made based on the feature selection investigation:
+All in all, the following decisions were made based on the feature selection investigation:
 
 * The `flipper_length_mm` and `bill_depth_mm` are the most likely contributing variables that will be in the model.  
-* The variable `island` is kept and evaluated per model on how much of a contribution difference it makes based on the algorithm and algorithm assumptions.  
 * However, the `bill_length_mm` variable is removed due to it being a perfectly discriminating variable.   
-* Due to high correlation with `flipper_length_mm`, `body_mass_g` is removed to avoid collinearity.  
-* The `sex` variable is removed as it does not contribute based on the feature selection investigation.   
+* Due to the high correlation with `flipper_length_mm`, `body_mass_g` is removed to avoid collinearity.  
+* The `sex` variable is removed as it does not contribute based on the feature selection investigation.
+* The `island` variable was kept and evaluated per model in the previous sections on how much of a contribution difference it makes based on the algorithm and algorithm assumptions. For the KNN model, it will be ignored. 
 * The `year` variable is ignored.  
 
-#### Building the Model
+##### Normality & Linearity 
+
+The data were then pre-processed to fulfill the assumption of normality, i.e. each quantitative variable $~N(\mu,\sigma) = (0,1)$ by centering and scaling. Normalization ensures that each variable has equal influence when calculating the Euclidean distance, else a variable with a larger scale would add bias to calculation.
+
+```{r normality}
+set.seed(525)
+# Train set
+processed_train_peng = preProcess(train_peng.p)
+train_peng.p = predict(processed_train_peng, train_peng.p)
+
+# Test set
+processed_test_peng = preProcess(test_peng.p)
+test_peng.p = predict(processed_test_peng, test_peng.p)
+```
+
+#### Building the KNN Model
 
 K-Nearest Neighbor classification works such that for each row of the test set, the k nearest (in Euclidean distance) training set vectors are found, and the classification is decided by majority vote, with ties broken at random.
 
-With the decision on the features set, there is no need to perform stepwise elimination to account for the best predictors, thus to optimize each model, 10 repeats of 10-fold cross-validation is perform. With accuracy being the decision metric for the best performing model, there is 10 repeats of the 10-fold cross-validation. By doing this, the training set is divided randomly into 10 parts and then each of 10 parts is used as testing set for the model trained on other the 9. Then the average of the 10 error terms is obtained by performing the 10-fold CV ten times. The advantage of a repeated hold-out instead of a k-fold is that there have more control.
+With the decision on the features set, there is no need to perform stepwise elimination to account for the best predictors, thus to optimize each model, 10 repeats of 10-fold cross-validation is performed. With accuracy being the decision metric for the best performing model, there are 10 repeats of the 10-fold cross-validation. By doing this, the training set is divided randomly into 10 parts and then each of 10 parts is used as a testing set for the model trained on other the 9. Then the average of the 10 error terms is obtained by performing the 10-fold CV ten times. The advantage of a repeated hold-out instead of a k-fold is that there is more control.
 
 ```{r pengknn}
 set.seed(525)
@@ -237,9 +248,9 @@ plot(knnModel, main = "Accuracy of KNN Model")
 plot(varImp(knnModel), main = "Rank of Most Important Variable")
 ```
 
-#### Model Discussion & Conclusions
+#### Model Discussion 
 
-The best tune for the KNN model which resulted in the largest accuracy is k = 5. It has accuracy = 80.5%, and $\kappa$ = 0.69. This tune accounts for the largest portion of the variability in the data than all other latent variables. Moreover, the variables that contributed the most to identifying Adelie and Gentoo is the flipper length, while bill depth was the most important variable to help classify Chinstrap. From the results based on the test data, the KNN model did exceptionally well in classifying the test set. Thus, the optimal model has an accuracy of 80.4% and $\kappa$ = 0.68 on the test set. 
+The best tune for the KNN model which resulted in the largest accuracy is k = 5. It has accuracy = 80.5%, and $\kappa$ = 0.69. This tune accounts for the largest portion of the variability in the data than all other latent variables. Moreover, the variable that contributed the most to identifying Adelie and Gentoo is the flipper length, while bill depth was the most important variable to help classify Chinstrap. From the results based on the test data, the KNN model did exceptionally well in classifying the test set. Thus, the optimal model has an accuracy of 80.4% and $\kappa$ = 0.68 on the test set. 
 
 In terms of the confusion matrix, the results suggest that 80.4% of the predicted results seem to be correctly classified. The precision for each type of species is also high (Adelie = 74%, Chinstrap = 54%, and Gentoo = 100%), suggesting that the penguins belong to the actual species among all the penguins predicted to be that particular species, with Gentoos being classified correctly 100% of the time. Moreover, the recall highlights that 87% of the Adelie species have been correctly classified accordingly, whereas 35% of the Chinstrap species have been correctly classified, and 97% of the Gentoo species have been correctly classified. In all, this model is capable of classifying penguins into one of the three species with great accuracy, particularly Gentoo species which was expected as their measurements were quite different. And lastly, the Kappa statistic of 0.68 suggests that the overall accuracy of this model is better than the expected random chance classifier's accuracy.
 
@@ -251,7 +262,7 @@ confusion = confusionMatrix(pred.R, test_peng.r, mode = "everything")
 confusion
 ```
 
-Next, a receiver operating characteristic (ROC) analysis is shown in Figure 1. The area under the curve (AUC) for each class was estimated for observed penguin species and their predicted values by fitting the KNN model. The multi-class area under the curve for the predicted penguin species is the mean for all three AUC. It was computed to be 0.854. That is, there is a 85.4% chance that the model will be able to distinguish among the three penguin species. 
+Next, a receiver operating characteristic (ROC) analysis is shown in Figure 1. The area under the curve (AUC) for each class was estimated for observed penguin species and their predicted values by fitting the KNN model. The multi-class area under the curve for the predicted penguin species is the mean for all three AUC. It was computed to be 0.854. That is, there is an 85.4% chance that the model will be able to distinguish among the three penguin species. 
 
 <center> Fig 1: ROC Curves of the KNN Model </center>
 
@@ -259,7 +270,7 @@ Next, a receiver operating characteristic (ROC) analysis is shown in Figure 1. T
 predictions = as.numeric(predict(knnModel, test_peng.p, type = 'raw'))
 roc.multi = multiclass.roc(test_peng.r, predictions)
 auc(roc.multi)
-plot.roc(roc.multi[['rocs']][[1]], main = "Multi-class ROC, Macro-Average ROC = 0.854")
+plot.roc(roc.multi[['rocs']][[1]], main = "Multi-class ROC, Macro-Average AUC = 0.854")
 sapply(2:length(roc.multi[['rocs']]), function(i) lines.roc(roc.multi[['rocs']][[i]], col=i))
 
 legend("bottomright", 
@@ -270,17 +281,19 @@ legend("bottomright",
 
 ```
 
-Given the `palmerpenguins` dataset, five multi-classification models, namely multinomial logistic regression, linear discriminant analysis, quadratic discriminant analysis, Naive Bayes and K-nearest neighbor models were fitted. From previous analysis, each model had its strengths and weakness, and in the end, the results were as follows:
+#### Conclusion
+
+Given the `palmerpenguins` dataset, five multi-classification models, namely multinomial logistic regression, linear discriminant analysis, quadratic discriminant analysis, Naive Bayes, and K-nearest neighbor models were fitted. From previous analyses, each model had its strengths and weakness on the same cleaned training dataset, and in the end, the results were as follows:
 
 Model | Accuracy
 ------|------
 Multinomial Logistic Regression | 0.87
 Linear Discriminant Analysis | 0.82
 Quadratic Discriminant Analysis | 0.83
-Naive Bayes | 0.92
+*Naive Bayes* | *0.92*
 K Nearest Neighbor | 0.80
 
-Of all the classification model used to classify the penguin species, the Naive Bayes model's ability was proved to be near-optimal. Adelie and Gentoo were seen to be classified easily based on the flipper length, as it was the most important variable used in the classification. Whereas, for Chinshtrap, it was the bill depth. In conclusion, the Naive Bayes classifier produced a model that is 92.1% accurate in correctly classifying penguins into `Adelie`, `Chinstrap`, and `Gentoo`. This model also had an error rate of 0.161 between the measurements, which is the smallest than what the other models determined.
+Of all the classification models used to classify the penguin species, the Naive Bayes model's ability was proved to be near-optimal. Adelie and Gentoo were seen to be classified easily based on the flipper length, as it was the most important variable used in the classification. Whereas, for Chinshtrap, it was the bill depth. In conclusion, the Naive Bayes classifier produced a model that is 92.1% accurate in correctly classifying penguins into `Adelie`, `Chinstrap`, and `Gentoo`. This model also had an error rate of 0.161 between the measurements, which is the smallest than what the other models determined.
 
 ***
 
@@ -298,13 +311,13 @@ Gender | Male/Female
 Married | Applicant married (Y/N)
 Dependents | Number of dependents
 Education | Applicant Education (Graduate/Undergraduate)
-Self_Employed | Self employed (Y/N)
+Self_Employed | Self-employed (Y/N)
 ApplicantIncome | Applicant Income
-CoapplicantIncome | Coapplicant Income
+CoapplicantIncome | Co-applicant Income
 LoanAmount | Loan amount in thousands
 Loan_Amount_Term | Term of loan in months
 Credit_History | Credit history meets guidelines
-Property_Area | Urban/Semi Urban/Rural
+Property_Area | Urban/Semi-Urban/Rural
 Loan_Status | (Target) Loan Approved (Y/N)
 
 ```{r loan_data}
@@ -322,191 +335,196 @@ loan_df <- read.csv(loan_df_link) %>%
   select(-Loan_ID)
 ```
 
-This dataset includes `r nrow(loan_df)` datapoints and `r ncol(loan_df) +1` columns. The target variable is `Loan_Status`. Since the `Loan_ID` variable is unique to each record, we will remove it from the dataset. We can see that the `Loan_Status` classification is highly imbalanced, with more than double the amount of approvals (Y) than rejections (N). 
+This dataset includes `r nrow(loan_df)` data points and `r ncol(loan_df) +1` columns. The target variable is `Loan_Status`. Since the `Loan_ID` variable is unique to each record, it is removed from the dataset. It is clear that the `Loan_Status` classification is highly imbalanced, with more than twice the amount of approvals (*Y*) than rejections (*N*). 
 
-```{r loan_dist, fig.height=3}
-
+```{r loan_dist, fig.height=3.5}
 loan_df %>%
   drop_na() %>%
   count(Loan_Status) %>%
-  ggplot() + geom_col(aes(x = Loan_Status, y = n, fill = Loan_Status)) +
+  ggplot() + geom_col(aes(x = Loan_Status, y = n, fill = Loan_Status), show.legend = FALSE) +
   geom_label(aes(x = Loan_Status, y = n, label = n)) +
   theme_minimal() +
-  labs(title = 'Distribution of Loan Status')
-
+  labs(title = 'Distribution of Loan Status', y = "Frequency", x = "Loan Status")
 ```
 
 #### Understanding the Data
-Let's take a preliminary look at the summary statistics for the dataset: 
+
+Below is highlights the summary statistics for the dataset: 
 
 ```{r loan_summary}
 dfSummary(loan_df, plain.ascii = TRUE, style = "grid", graph.col = FALSE, footnote = NA)
 ```
 
-Some things to note: 
+It should be noted that: 
 
-* Seven of the variables have missing values, which is something we will have to deal with later on. 
-* Almost all of the categorical variables are highly imbalanced: `Gender` (more males than females), `Married` (more married loan applicants than single), `Education` (more graduates than non-graduates), `Self_Employed` (less self-employed individuals), and `Credit History` (more individuals with credit history than not).
+* Seven of the 12 variables have missing values, which will be corrected in the later sections. 
+* The frequency of almost all of the categorical variables are unequally in proportion: `Gender` (more males than females), `Married` (more married loan applicants than single), `Education` (more graduates than non-graduates), `Self_Employed` (less self-employed individuals), and `Credit History` (more individuals with credit history than not).
 
 ##### Categorical Features
 
-We'll look at each of the categorical features with respect to the final classification. Since most of our categorical features are imbalanced, we will look at the data in terms of percentages as opposed to counts. 
+An in-depth investigation into each of the categorical features with respect to the final classification is conducted. Since most of the categorical features are disproportionate, the data is referred to in terms of percentages as opposed to counts. 
 
 `Gender`: Regardless of the sex, around 70% of individuals are approved for a loan. 
 
-```{r loan_gender, fig.height=3}
+```{r loan_gender, fig.height=3.5}
 tab_gender <- with(loan_df, table(Gender, Loan_Status))
 tab_gender <- as.data.frame(prop.table(tab_gender, margin = 1)) %>%
   filter(Loan_Status == 'Y')
 
 tab_gender %>% 
   ggplot() +  
-  geom_col(aes(x=Gender, y=Freq, fill=Gender)) +
-  geom_label(aes(x=Gender, y=Freq, label = round(Freq,2))) +
+  geom_col(aes(x=Gender, y=Freq, fill=Gender), show.legend = FALSE) +
+  geom_label(aes(x=Gender, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme_minimal() +
-  labs(title = 'Approved Loans by Gender')
-
+  labs(title = 'Approved Loans by Gender', y = "Percentage")
 ```
 
 `Married`: Married individuals tend to be approved more often than non-married individuals. 
 
-```{r loan_marriage, fig.height=3}
+```{r loan_marriage, fig.height=3.5}
 tab_married <- with(loan_df, table(Married, Loan_Status))
 tab_married <- as.data.frame(prop.table(tab_married, margin = 1)) %>%
   filter(Loan_Status == 'Y')
 
 tab_married %>% 
   ggplot() +  
-  geom_col(aes(x=Married, y=Freq, fill=Married)) +
-  geom_label(aes(x=Married, y=Freq, label = round(Freq,2))) +
+  geom_col(aes(x=Married, y=Freq, fill=Married), show.legend = FALSE) +
+  geom_label(aes(x=Married, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme_minimal() +
-  labs(title = 'Approved Loans by Marital Status')
-
+  labs(title = 'Approved Loans by Marital Status', y = "Percentage")
 ```
 
-`Dependents`: The number of dependents an individual has doesn't appear to be as indicative of loan approval. 
+`Dependents`: The number of dependents an individual has does not appear to be indicative of loan approval. 
 
-```{r loan_kids, fig.height=3}
+```{r loan_kids, fig.height=3.5}
 tab_kids <- with(loan_df, table(Dependents, Loan_Status))
 tab_kids <- as.data.frame(prop.table(tab_kids, margin = 1)) %>%
   filter(Loan_Status == 'Y')
 
-
 tab_kids %>% 
   ggplot() +  
-  geom_col(aes(x=Dependents, y=Freq, fill=Dependents)) +
-  geom_label(aes(x=Dependents, y=Freq, label = round(Freq,2))) +
+  geom_col(aes(x=Dependents, y=Freq, fill=Dependents), show.legend = FALSE) +
+  geom_label(aes(x=Dependents, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme_minimal() +
-  labs(title = 'Approved Loans by Number of Dependents')
+  labs(title = 'Approved Loans by Number of Dependents', y = "Percentage", x = "# of Dependents")
 ```
 
 `Education`: Graduates tend to be approved more often than non-graduates. 
 
-```{r loan_edu, fig.height=3}
+```{r loan_edu, fig.height=3.5}
 tab_edu <- with(loan_df, table(Education, Loan_Status))
 tab_edu <- as.data.frame(prop.table(tab_edu, margin = 1)) %>%
   filter(Loan_Status == 'Y')
 
 tab_edu %>% 
   ggplot() +  
-  geom_col(aes(x=Education, y=Freq, fill=Education)) +
-  geom_label(aes(x=Education, y=Freq, label = round(Freq,2))) +
+  geom_col(aes(x=Education, y=Freq, fill=Education), show.legend = FALSE) +
+  geom_label(aes(x=Education, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme_minimal() +
-  labs(title = 'Approved Loans by Education')
+  labs(title = 'Approved Loans by Education', y = "Percentage")
 ```
 
-`Self-Employed`: Employment Status alone doesn't appear to have a significant impact on approval status.
+`Self-Employed`: Employment Status alone does not appear to have a significant impact on approval status.
 
-```{r loan_emp, fig.height=3}
+```{r loan_emp, fig.height=3.5}
 tab_emp <- with(loan_df, table(Self_Employed, Loan_Status))
 tab_emp <- as.data.frame(prop.table(tab_emp, margin = 1)) %>%
   filter(Loan_Status == 'Y')
 
 tab_emp %>% 
   ggplot() +  
-  geom_col(aes(x=Self_Employed, y=Freq, fill=Self_Employed)) +
-  geom_label(aes(x=Self_Employed, y=Freq, label = round(Freq,2))) +
+  geom_col(aes(x=Self_Employed, y=Freq, fill=Self_Employed), show.legend = FALSE) +
+  geom_label(aes(x=Self_Employed, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme_minimal() +
-  labs(title = 'Approved Loans by Employment Status')
+  labs(title = 'Approved Loans by Employment Status', y = "Percentage", x = "Self-Employed")
 ```
 
-`Credit History`: This factor has a really large impact on the final approval! 80% of individuals with credit history are approved versus only 8% for those with no credit history. 
+`Credit History`: This factor appears to be more impactful on the final approval! Nearly 80% of individuals with a credit history are approved versus only 8% for those with no credit history. 
 
-```{r loan_credit, fig.height=3}
+```{r loan_credit, fig.height=3.5}
 tab_cred <- with(loan_df, table(Credit_History, Loan_Status))
 tab_cred <- as.data.frame(prop.table(tab_cred, margin = 1)) %>%
   filter(Loan_Status == 'Y')
 
 tab_cred %>% 
   ggplot() +  
-  geom_col(aes(x=Credit_History, y=Freq, fill=Credit_History)) +
-  geom_label(aes(x=Credit_History, y=Freq, label = round(Freq,2))) +
+  geom_col(aes(x=Credit_History, y=Freq, fill=Credit_History), show.legend = FALSE) +
+  geom_label(aes(x=Credit_History, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme_minimal() +
-  labs(title = 'Approved Loans by Credit History')
+  labs(title = 'Approved Loans by Credit History', y = "Percentage", x = "Credit History")
 ```
 
-`Property_Area`: Individuals living in semi-urban areas tend to be approved more often than those in rural or urban areas.  
+`Property Area`: Individuals living in semi-urban areas tend to be approved more often than those in rural or urban areas.  
 
-```{r loan_prop, fig.height=3}
+```{r loan_prop, fig.height=3.5}
 tab_prop <- with(loan_df, table(Property_Area, Loan_Status))
 tab_prop <- as.data.frame(prop.table(tab_prop, margin = 1)) %>%
   filter(Loan_Status == 'Y')
 
 tab_prop %>% 
   ggplot() +  
-  geom_col(aes(x=Property_Area, y=Freq, fill=Property_Area)) +
-  geom_label(aes(x=Property_Area, y=Freq, label = round(Freq,2))) +
+  geom_col(aes(x=Property_Area, y=Freq, fill=Property_Area), show.legend = FALSE) +
+  geom_label(aes(x=Property_Area, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme_minimal() +
-  labs(title = 'Approved Loans by Property Area')
+  labs(title = 'Approved Loans by Property Area', y = "Percentage", x = "Property Area")
 ```
 
 ##### Numeric Features 
 
-We can also take a look at the numeric features. 
+Next, an in-depth look into the numeric features is carried out to understand their influence on the loan approval status. 
 
-`Applicant Income`: We see a few outliers in both approvals and non-approvals. The distribution for each classification is right-skewed. 
+`Applicant Income`: There are a few outliers in both approvals and non-approvals. The distribution for each classification is right-skewed. 
 
-```{r loan_income, fig.height=3}
+```{r loan_income, fig.height=3.5}
 loan_df %>%
   drop_na() %>%
   ggplot( aes(x=ApplicantIncome, fill=Loan_Status)) +
-  geom_histogram( alpha=0.6, position = 'identity') +
-  labs(title = 'Loan Approval by Applicant Income')
+  geom_histogram(alpha=0.6, position = 'identity') +
+  labs(title = 'Loan Approval by Applicant Income', x = "Applicant Income")
 ```
 
-`Coapplicant Income`: Once again, a few very high outliers. Data is right-skewed for both classes. 
-```{r loan_coincome, fig.height=3}
+`Co-applicant Income`: Once again, there are a few very high outliers. Data is right-skewed for both classes.
+
+```{r loan_coincome, fig.height=3.5}
 loan_df %>%
   drop_na() %>%
   ggplot( aes(x=CoapplicantIncome, fill=Loan_Status)) +
   geom_histogram( alpha=0.6, position = 'identity') +
-  labs(title = 'Loan Approval by Coapplicant Income')
+  labs(title = 'Loan Approval by Coapplicant Income', x = "Co-applicant Income")
 ```
 
 `Loan Amount`: A few outliers in each class, but a normal distribution otherwise. 
-```{r loan_amount, fig.height=3}
+
+```{r loan_amount, fig.height=3.5}
 loan_df %>%
   drop_na() %>%
   ggplot( aes(x=LoanAmount, fill=Loan_Status)) +
   geom_histogram( alpha=0.6, position = 'identity') +
-  labs(title = 'Loan Approval by Loan Amount')
+  labs(title = 'Loan Approval by Loan Amount', x = "Loan Amount")
 ```
 
 `Loan Term`: Most applicants have a loan term between 300 - 400 months. 
-```{r loan_term, fig.height=3}
+
+```{r loan_term, fig.height=3.5}
 loan_df %>%
   drop_na() %>%
   ggplot( aes(x=Loan_Amount_Term, fill=Loan_Status)) +
   geom_histogram( alpha=0.6, position = 'identity') +
-  labs(title = 'Loan Approval by Loan Amount Term')
+  labs(title = 'Loan Approval by Loan Amount Term', x = "Loan Amount Term")
 ```
 
 #### Data Preparation
 
-We can see that 5 categorical and 2 numeric variables have missing values. 
+From the summary statistics, 5 categorical and 2 numeric variables have missing values. Their overall proportion is a bit extreme. For example, from the graph below, the first variable `Credit_history` accounts for 8% of the missing data when the other variables are complete, note this does not indicate within variable missingness. 
 
 ```{r loan_missing}
-
 loan_missing <- loan_df %>%
   gather(key = "key", value = "val") %>%
   mutate(isna = is.na(val)) %>%
@@ -514,23 +532,24 @@ loan_missing <- loan_df %>%
   mutate(total = n()) %>%
   group_by(key, total, isna) %>%
   summarise(num_null = n()) %>%
-  mutate(pct_missing = round(num_null / total * 100,2)) %>%
+  mutate(pct_missing = round(num_null / total * 100,1)) %>%
   filter(isna == TRUE) 
 
 loan_missing %>%
   ggplot() + 
   geom_col(aes(x = key, y = pct_missing), fill='steelblue') +
-  geom_label(aes(x = key, y = pct_missing, label = pct_missing)) +
+  geom_label(aes(x = key, y = pct_missing, label = paste0(pct_missing,"%"))) +
+    scale_y_continuous(labels = function(x) paste0(x, "%")) +
   theme(axis.text.x=element_text(angle=45, hjust=1)) +
   labs(title = 'Percent Missing by Variable', x = 'Variable', y = 'Percent Missing')
-
 ```
 
-* We will discard all of the records that have missing categorical features. These will not be easy to impute and some (like Credit History) are impactful in the final classification.
-* We will impute the values for the numeric features using the Multivariate imputation by chained equations (MICE) method. Multiple imputation involves creating multiple predictions for each missing value, helping to account for the uncertainty in the individual imputations. 
+As a result, 
+
+* All of the records that have missing categorical features are discarded. These are not as easy to impute and some variables (like `Credit_History`) are impactful in the final classification.  
+* Imputation for the numeric features is done using the Multivariate Imputation by Chained Equations (MICE) method. Multiple imputation involves creating multiple predictions for each missing value, helping to account for the uncertainty in the individual imputations. 
 
 ```{r loan_impute}
-
 # remove records with null categorical values
 loan_df <- loan_df %>% filter(!is.na(Married) & 
                                 !is.na(Gender) & 
@@ -541,16 +560,13 @@ loan_df <- loan_df %>% filter(!is.na(Married) &
 # impute numeric null values using MICE method
 loan_df <- complete(mice(data = loan_df,
                          method = "pmm", print = FALSE), 3)
-
 ```
 
+The final cleaned dataset contains `r nrow(loan_df)` records with `r ncol(loan_df)` columns. 
 
-The final dataset contains `r nrow(loan_df)` records with `r ncol(loan_df)` columns. 
+#### Training and Testing Split
 
-
-#### Training & Analysis
-
-##### Train, Test, Split
+All the models will be trained on the same approximately 70% of the training set, reserving 30% for validation of which model to select for the loan approval classification on the test set.
 
 ```{r loan_tts}
 set.seed(525)
@@ -563,134 +579,11 @@ train_set <- loan_df[which_train, ]
 test_set <- loan_df[!which_train, ]
 ```
 
-The three models will be trained on 70% of the dataset and validated on the remaining 30% of the set. The training set contains `r nrow(train_set)` records and the test set contains `r nrow(test_set)` records. 
+The training set contains `r nrow(train_set)` records and the test set contains `r nrow(test_set)` records.
 
+#### Feature Selection
 
-##### Model #1: Decision Trees
-What is a decision tree? 
-Decision tree is a machine learning algorithm that is very versatile that is able to perform classification and regression tasks.
-When it comes to a decision tree there are important terms that one should know which are: 
-
-- root nodes - they represent the whole population or sample, which then gets divided within two or more. 
-- splitting - is when the nodes get divided into two or more
-- decision node - when a sub node splits
-- terminal or leaf - when the node no longer splits
-- branch - sub-section of the entire tree
-- parent-node - is when a node is divided into sub-nodes
-
-
-
-### Loan Data Feature Selection for Decision Tree
-
-- Lets look at the features of the data set by using the Boruta function and calculating the mean importance.
-
-```{r loanboruta, message=FALSE, warning=FALSE}
-set.seed(525)
-output = Boruta(train_set$Loan_Status ~ ., data = train_set, doTrace = 0)  
-roughFixMod = TentativeRoughFix(output)
-importance = attStats(TentativeRoughFix(output))
-importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
-kable(head(importance[order(-importance$meanImp), ])) %>%
-  kable_styling(bootstrap_options = "striped", full_width = TRUE)
-```
-
-
-By looking at this we can see that the biggest feature in the data is Credit History with a mean imp that is above 50. Credit_History is definitely an important feature because it allows one to know if one pays for their bills on time, or if they are generally late with their payments. The feature that follow are important but don't have the same mean importance is ApplicantIncome and CoapplicantIncome. Which its understandable why those two features would be important when it comes to loans is because one would want to make sure that there is enough income to pay for the loan.  
-
-
-
-### Plot the Decision Trees 
-
-In order to create the decision tree we will use the rpart package to calculate, and rpart.plot package to plot it.
-
-```{r fig.height=10, fig.width=10}
-dt_loan_model1 <- rpart(Loan_Status ~., data = train_set, method = 'class')
-rpart.plot(dt_loan_model1 )
-```
-
-This shows us that 68% of people have a credit history
-
-
-##### Error Rate of the Model 
-
-```{r}
-plotcp(dt_loan_model1)
-```
-
-This shows the error rate of the model and it is of the complexity parameter. 
-
-```{r}
-print(dt_loan_model1$cptable)
-```
-
-Looking at the error one can see that the best complexity parameter is at .016, because the xerror is at its lowest at .584. we will use the cp in the next model to see if there is an improvement in the decision tree and also compare the confusion matrix. The complexity parameter allows one to choose the optimal tree size. 
-
-### Confusion Matrix of first Decision Tree
-
-```{r}
-unseen_prediction <-predict(dt_loan_model1, test_set, type = 'class')
-
-confusionMatrix(table(unseen_prediction , test_set$Loan_Status))
-```
-
-Here you can see there is an accuracy rate of 76%, kappa is at 38%. Looking at the prediction you can see that 6 false postives, and 23 false negatives, while 78 are predicted correctly as Y and 16 as no.
-
-
-### Decision Tree with Hyperparameters 
-
-For this decision tree model we are going to include the complexity parameter of .016 as a hyperparameter which was obtained from the first model. One might wonder how does using complexity parameter change the decision tree. By looking at the decision tree plot you can see that it is a drastic change. 
-
-```{r}
-dt_loan_model2 <- rpart(Loan_Status ~.,
-                   method="class",
-                   data=train_set,
-                   control=rpart.control( cp= 0.016 ),
-                   parms=list(split='information'))
-
-rpart.plot(dt_loan_model2)
-```
-This only showcases Credit_History as the most important feature, which its not surprising since the mean importance was so high that no other feature was even close.  
-
-
-##### Error Rate of the Model 
-
-```{r}
-plotcp(dt_loan_model2)
-```
-
-The Error rate of this model is just a straight line. 
-
-
-### Confusion Matrix of Second Model
-
-
-```{r}
-unseen_prediction1 <-predict(dt_loan_model2, test_set, type = 'class')
-
-confusionMatrix(table(unseen_prediction1, test_set$Loan_Status))
-```
-
-The accuracy has improved after using the complexity parameter, you can see that the accuracy is at 79%, and Kappa is at 45%. The false positive is only 2, and the false negative is at 23, which didn't change from the original. But it correctly predicted 82. Based on this you can see that the best model is the one with the hyperparameter with the complexity parameter.
-
-
-### Conditional Parting Plot 
-
-This shows regression relationship of the conditional inference trees estimate that is partitioned by binary recursive in a  framework that is conditional inference. The package used for this is he party package and the partykit package, and the ctree function is used.
-
-
-```{r}
-ctree_<-ctree(Loan_Status ~.,data=train_set)
-plot(ctree_)
-```
-
-You can see again that credit history is the most important feature. Here you can see that n=62 is the number without a credit history, and n=326 is the number with a credit history. 
-
-
-##### Model #2: Random Forest
-
-A classification ensemble method, the random forests algorithm seeks to address the challenge of tree correlation inherent to bagging decision trees. By linearly combining many individual, independent trees, it reduces variance in prediction. However, it also randomly selects predictor features at each split of each tree in the ensemble, which mitigates possible correlation. This combination makes it a strong performer in general.
-
-Random forests modeling starts with feature selection to assess feature importance in predicting `Loan_Status`. This selection is itself done via an implementation of random forests. While the results of this process do not inform the subsequent random forest model and its features--all features are included in that model--they offer a high-level check of importance.   
+The features of the training data set is investigated by calculating the mean importance. This selection is itself done via an implementation of random forests. While the results of this process do not inform the subsequent Model #2: Random Forest and its features, they offer a high-level check of importance and can be useful for the other models. 
 
 ```{r loanboruta}
 set.seed(525)
@@ -698,50 +591,148 @@ output = Boruta(train_set$Loan_Status ~ ., data = train_set, doTrace = 0)
 roughFixMod = TentativeRoughFix(output)
 importance = attStats(TentativeRoughFix(output))
 importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
-kable(head(importance[order(-importance$meanImp), ])) %>%
+kable(head(importance[order(-importance$meanImp), ]), 
+      caption = "Feature Importance of Loan Data Variables") %>%
   kable_styling(bootstrap_options = "striped", full_width = TRUE)
 ```
 
-Four features perform at least as well as the best performing randomized feature. With a mean importance of approximately 52.17, `Credit_History` represents the most important in predicting `Loan_Status`. The latter three--`CoapplicantIncome`,`ApplicantIncome`, and `Property_Area`--trail far behind.
+Four features perform at least as well as the best performing randomized feature. By looking at the table, the most contributing feature in the data is `Credit-History` with a mean importance of approximately 52.17. `Credit_History` has already been suggestive of its importance from the variable exploration, and it is the feature that allows loan givers judge if individuals can pay for their bills on time, or if they are generally late with their payments. The other importance features that follow are `ApplicantIncome` and `CoapplicantIncome`, which is understandable as when it comes to loans, loan givers would want to reassurance that the individuals have enough income to repay for the loan.  
 
-EDA revealed that the numeric features, which all describe dollar amounts, skewed rightward. In attempts to address that skewness, the features undergo the Box-Cox transformation and subsequent normalization prior to modeling.
+#### Normality & Linearity
+
+The EDA revealed that the numeric features, which all describe dollar amounts, are skewed rightward. In attempts to address that skewness, these features undergo the Box-Cox transformation and subsequent normalization prior to modeling.
 
 ```{r loantransform}
-train_set <- train_set %>% select(c("ApplicantIncome","CoapplicantIncome","LoanAmount","Loan_Amount_Term")) %>% preProcess(method = c("BoxCox", "center", "scale")) %>% predict(train_set)
-test_set <- test_set %>% select(c("ApplicantIncome","CoapplicantIncome","LoanAmount","Loan_Amount_Term")) %>% preProcess(method = c("BoxCox", "center", "scale")) %>% predict(test_set)
+set.seed(525)
+train_set <- train_set %>% 
+  select(c("ApplicantIncome", "CoapplicantIncome", "LoanAmount", "Loan_Amount_Term")) %>% 
+  preProcess(method = c("BoxCox", "center", "scale")) %>% 
+  predict(train_set)
+test_set <- test_set %>% 
+  select(c("ApplicantIncome", "CoapplicantIncome", "LoanAmount", "Loan_Amount_Term")) %>% 
+  preProcess(method = c("BoxCox", "center", "scale")) %>% 
+  predict(test_set)
 ```
 
-As noted, the random forests model incorporates all possible features, including dummies associated with the levels of factors like `Gender`, `Education`, and `Property_Area`. The sole tuning parameter for this implementation in *caret* is $m_{try}$, which refers to the number of randomly selected features to be chosen at each tree split and has been shown to affect model accuracy. A vector of $m_{try}$ values from 2 through 10 is provided for grid search. The number of trees in the forest ensemble is another general parameter, though one considered less important by Kuhn and Johnson, who suggest 1000 trees as a reasonable number (2013). Lastly, a 10-fold cross-validation scheme is repeated three times to create the final model.
+#### Building the Models
+##### Model #1: Decision Trees
+
+Decision tree is a machine learning algorithm that is very versatile that is able to perform classification and regression tasks. When it comes to a decision tree, there are important terms that one should know, and these are: 
+* root nodes - they represent the whole population or sample, which then gets divided within two or more.  
+* splitting - is when the nodes get divided into two or more.  
+* decision node - when a sub node splits.  
+* terminal or leaf - when the node no longer splits.  
+* branch - sub-section of the entire tree.  
+* parent-node - is when a node is divided into sub-nodes.  
+
+The decision tree is fitted on the training set, and visualized below.  
+
+```{r loan_dt1, fig.height=10, fig.width=10}
+set.seed(525)
+dt_loan_model1 <- rpart(Loan_Status ~., 
+                        data = train_set, 
+                        control=rpart.control(cp = 0), 
+                        method = 'class')
+rpart.plot(dt_loan_model1)
+```
+
+The best first split is the one that provides the most information gain, and it shows that credit history plays an important role in the loan approval decision. 
+
+In addition, this plot below shows the error rate of the model and it is of the complexity parameter (cp). Looking at the error, the best complexity parameter is at 0.01, because the x-error is at its lowest at 0.61. Moreover, in terms of the confusion matrix, the decision tree model resulted in an accuracy rate of 80.4% and $\kappa$ at 48% on the test set. Looking at the predictions, there are 13 false positives, and 22 false negatives, while 98 are predicted correctly as an approved loan and 25 as no loan approval.
+
+```{r loan_dt_plot, fig.height=4}
+plotcp(dt_loan_model1)
+print(dt_loan_model1$cptable)
+```
+
+```{r loan_dt_CMx, echo = FALSE}
+unseen_prediction <-predict(dt_loan_model1, test_set, type = 'class')
+confusionMatrix(table(unseen_prediction , test_set$Loan_Status))
+```
+
+The complexity parameter allows one to choose the optimal tree size. Thus, using this information from the base decision tree model, there is an attempt to improve the model and also compare the updated confusion matrix. 
+
+##### Improved Decision Tree (with Hyperparameters)
+
+For this decision tree model, there is the inclusion of the complexity parameter of 0.011 as a hyperparameter, which was obtained from the first model. One might wonder how does using complexity parameter change the decision, and by looking at the updated plot, the model has drastically changed. 
+
+```{r loan_dt2, fig.height=4}
+set.seed(525)
+dt_improve <- rpart(Loan_Status ~.,
+                    method="class",
+                    data=train_set,
+                    control=rpart.control(cp = 0.01),
+                    parms=list(split='information'))
+rpart.plot(dt_improve)
+
+# train improved decision tree model
+dt.model = train(Loan_Status ~.,
+                 data=train_set,
+                 method = "rpart",
+                 metric = "Accuracy",
+                 control = rpart.control(cp = 0.01),
+                 trControl = trainControl(method = "repeatedcv",
+                                          number = 10, 
+                                          repeats = 3, 
+                                          allowParallel = TRUE,
+                                          classProbs = TRUE))
+```
+
+This only showcases `Credit_History` as the most important feature, which is not surprising since the mean importance was so high that no other feature was even close.  
+
+The error rate of this model is just a straight line, and the accuracy and kappa statistic have improved after using the complexity parameter, accuracy = 82.9% and $\kappa$ = 0.52. The false positive is only 2, and the false negative is at 22. The improved model did better at predicting the loan approval status than the base decision tree model.
+
+```{r loan_dt_CMx2}
+unseen_prediction1 <-predict(dt.model, test_set, type = 'raw')
+confusionMatrix(table(unseen_prediction1, test_set$Loan_Status))
+```
+
+##### Conditional Parting Plot 
+
+Lastly, the plot below show the regression relationship of the conditional inference trees estimate that is partitioned by binary recursive in a framework that is conditional inference. It shows that credit history is the most important feature. Here you can see that, and that n = 62 is the number without a credit history, and n = 326 is the number with a credit history. 
+
+```{r loan_dt_ctree}
+set.seed(525)
+ctree_<-ctree(Loan_Status ~., data=train_set)
+plot(ctree_)
+```
+
+##### Model #2: Random Forest
+
+As a classification ensemble method, the random forests algorithm seeks to address the challenge of tree correlation inherent to bagging decision trees. By linearly combining many individual, independent trees, it reduces variance in prediction. However, it also randomly selects predictor features at each split of each tree in the ensemble, which mitigates possible correlation. This combination makes it a strong performer in general.
+
+As noted, random forests modeling starts with feature selection to assess feature importance in predicting `Loan_Status`. It incorporates all possible features, including dummies associated with the levels of factors like `Gender`, `Education`, and `Property_Area`. The sole tuning parameter for this implementation is $m_{try}$, which refers to the number of randomly selected features to be chosen at each tree split, and has been shown to affect model accuracy. A vector of $m_{try}$ values from 2 through 10 is provided for grid search. The number of trees in the forest ensemble is another general parameter, though one considered less important by Kuhn and Johnson (2013), who suggest 1000 trees as a reasonable number. Lastly, a 10-fold cross-validation scheme is repeated three times to create the final model.
 
 ```{r rf}
 set.seed(525)
-(loan_rf <- train(Loan_Status ~ .,
+rf.model <- train(Loan_Status ~ .,
                   data = train_set,
                   method = "ranger",
                   metric = "Accuracy",
                   num.trees = 1000,
                   importance = "impurity",
                   tuneGrid = expand.grid(.mtry=c(2:10), .min.node.size=1, .splitrule="gini"),
-                  trControl = trainControl(method = "repeatedcv", number = 10, repeats = 3, allowParallel = TRUE, classProbs = TRUE)))
+                  trControl = trainControl(method = "repeatedcv", 
+                                           number = 10, 
+                                           repeats = 3, 
+                                           allowParallel = TRUE, 
+                                           classProbs = TRUE))
 ```
 
-Optimizing accuracy at approximately 0.791, the final model used three features at each split ($m_{try}$ = 4). The plot below depicts differences in accuracy across $m_{try}$ values.
+The resulting model optimized the accuracy to approximately 80%, and the final model used three features at each split ($m_{try}$ = 3). The plot depicts differences in accuracy across $m_{try}$ values. In addition, considering feature importance, `Credit_History` = 1, representing rows with a credit history, is important in all trees, just as it was the most important in the initial feature selection. `ApplicantIncome`, `LoanAmount`, `CoapplicantIncome`, and `Loan_Amount_Term` are also relatively important, though none of them were notably so initially. In summary, given these data, an individual's having a credit history is clearly the most important predictor of loan receipt, whereas other predictors are a mixed bag.
 
-```{r rfplot}
-plot(loan_rf, main = "Optimal mtry value of 4 (Accuracy ~ 0.791)")
+```{r rfplots, fig.width=10, fig.height=4}
+p1 = plot(rf.model, main = "Optimal mtry = 3, Accuracy ~ 79.9%")
+p2 = plot(varImp(rf.model, scale = TRUE), main = "Feature Importance: RF Model")
+gridExtra::grid.arrange(p1,p2, ncol = 2)
 ```
 
-Considering feature importance, `Credit_History1`, representing rows with a credit history, is important in all trees, just as it was the most important in initial feature selection. `ApplicantIncome` (~ 66.08), `LoanAmount` (~ 61.36), `CoapplicantIncome` (~ 37.61), and `Loan_Amount_Term` (~ 15.49) are also relatively important, though none of them were notably so initially. In sum, given these data, an individual's having a credit history is clearly the most important predictor of loan receipt, whereas other predictors are a mixed bag.
+Predicting `Loan_Status` for the test set returns an accuracy of approximately 84.2% with $\kappa$ of approximately 0.57. These values both exceed their training set counterparts, which is surprising. It could simply result from sampling, though further investigation -- beyond this exercise -- seems warranted.
 
-```{r rfimportance}
-varImp(loan_rf, scale = TRUE)
-```
-
-Predicting `Loan_Status` for the test set returns an accuracy of approximately 0.835 with $\kappa$ of approximately 0.56. These values both exceed their training set counterparts, which is surprising. It could simply result from sampling, though further investigation--beyond this exercise--seems warranted.
-
-```{r rfpred}
-loan_rf_pred <- predict(loan_rf, newdata = test_set)
-postResample(pred = loan_rf_pred, obs = test_set$Loan_Status)
+```{r rfpred, echo = FALSE}
+set.seed(525)
+loan_rf_pred <- predict(rf.model, newdata = test_set)
+stats = postResample(pred = loan_rf_pred, obs = test_set$Loan_Status)
 ```
 
 Unfortunately, `Loan_Status` is not well balanced across classes. Specifically, the data set contains roughly twice as many "Y" values as there are "N" values. This imbalance suggests that accuracy may not be the best measure of the random forest model's predictive performance. In response, a confusion matrix and other evaluative measures are run on the predictions. 
@@ -750,349 +741,219 @@ Unfortunately, `Loan_Status` is not well balanced across classes. Specifically, 
 (confusionMatrix(loan_rf_pred, test_set$Loan_Status, mode = "everything", positive = "Y"))
 ```
 
-The confusion matrix shows poor performance in predicting loan application rejections ("N"), with a specificity, or true negative rate, of approximately 0.553. By comparison, the sensitivity, or true positive rate, is quite high, at approximately 0.955. Combining the two measures, the balanced accuracy of approximately 0.754 is middling. Below, an ROC curve carries an associated AUC value of approximately 0.754, which, again, is just okay.
+The confusion matrix shows poor performance in predicting loan application rejections ("N"), with a specificity, or true negative rate, of approximately 0.51. By comparison, the sensitivity, or true positive rate, is quite high, at approximately 0.98. Combining the two measures, the balanced accuracy of approximately 0.75 is middling. Below, an ROC curve carries an associated AUC value of approximately 0.75, which, again, is just okay.
 
 ```{r rfroc}
 loan_rf_predictions <- cbind(test_set, loan_rf_pred = as.numeric(loan_rf_pred))
 loan_rf_roc <- roc(loan_rf_predictions, Loan_Status, loan_rf_pred)
 auc(loan_rf_roc)
-plot.roc(loan_rf_roc, main = "AUC ~ 0.754")
+plot.roc(loan_rf_roc, main = "AUC ~ 0.75")
 ```
-
-Overall, the random forests model predicts approved loan applications well (`Loan_Status` = "Y") and rejected applications poorly (`Loan_Status` = "N"). It suffers from class imbalance in the available data, and this imbalance is felt in spite of cross-validation. Having additional observations for the negative class would be ideal, but otherwise, an extension of this extension should consider resampling the training set--perhaps over-sampling the negative class or testing additional resamples--to promote better balance across `Loan_Status` classes.
 
 ##### Model #3: Gradient Boosting
 
-  Gradient boosted machines build an ensemble of shallow and weak successive trees with each tree learning and improving on the previous. When combined, these many weak successive trees produce a powerful “committee” that are often hard to beat with other algorithms. The advantages of GBM are it provides predictive accuracy, lots of flexibility with hyperparameter tuning options, works well with categorical and numerical values and can handle missing data. The disadvantages of GBM can be overfitting due to constant error minimization and requires many trees which can be time consuming and memory intensive. Results might be less interpretable unless used with other tools like variable importance, partial dependence plots, LIME. 
+Gradient Boosted Machines (GBM) build an ensemble of shallow and weak successive trees with each tree learning and improving on the previous. When combined, these many weak successive trees produce a powerful “committee” that are often hard to beat with other algorithms. The advantages of GBM are it provides predictive accuracy, lots of flexibility with hyperparameter tuning options, works well with categorical and numerical values and can handle missing data. The disadvantages of GBM can be overfitting due to constant error minimization and requires many trees which can be time consuming and memory intensive. Results might be less interpretable unless used with other tools like variable importance, partial dependence plots, `LIME`, etc. 
 
-  Boosting works by adding new models to the ensemble sequentially. At each particular iteration, a new weak, base-learner model is trained with respect to the error of the whole ensemble learnt so far. GBM starts with base-learning models, then training weak models and followed up with sequential training with respect to errors. The following is explained more in detail on the process.
+Boosting works by adding new models to the ensemble sequentially. At each particular iteration, a new weak, base-learner model is trained with respect to the error of the whole ensemble learnt so far. GBM starts with base-learning models, then training weak models and followed up with sequential training with respect to errors. The following is explained more in detail on the process.
 
-Base-learning models: Boosted algorithms almost always use decision trees as the base-learner. We will be using boosting in the context of regression trees.
+* Base-learning models: Boosted algorithms almost always use decision trees as the base-learner (here, boosting is used in the context of regression trees).
 
-Training weak models: A weak model is one whose error rate is only slightly better than random guessing. The idea behind boosting is that each sequential model builds a simple weak model to slightly improve the remaining errors. Commonly, trees with only 1-6 splits are used. Combining many weak models increases speed, accuracy improvement, and avoids overfitting.
+* Training weak models: A weak model is one whose error rate is only slightly better than random guessing. The idea behind boosting is that each sequential model builds a simple weak model to slightly improve the remaining errors. Commonly, trees with only 1-6 splits are used. Combining many weak models increases speed, accuracy improvement, and avoids overfitting.
 
-Sequential training with respect to errors: Boosted trees are grown sequentially; each tree is grown using information from previously grown trees. The basic algorithm for boosted regression trees can be generalized to the following where x represents our features and y represents our response:
+* Sequential training with respect to errors: Boosted trees are grown sequentially; each tree is grown using information from previously grown trees. 
 
-1) Fit a decision tree to the data: F1(x)=yF1(x)=y,
+The basic algorithm for boosted regression trees can be generalized to the following where x represents the predictor variables and y represents response variables:
 
-2) We then fit the next decision tree to the residuals of the previous: h1(x)=y−F1(x)h1(x)=y−F1(x),
+1) Fit a decision tree to the data: $F_1(x) = y$,
 
-3) Add this new tree to our algorithm: F2(x)=F1(x)+h1(x)F2(x)=F1(x)+h1(x),
+2) We then fit the next decision tree to the residuals of the previous: $h_1(x) = y−F_1(x)$,
 
-4) Fit the next decision tree to the residuals of F2F2: h2(x)=y−F2(x)h2(x)=y−F2(x),
+3) Add this new tree to the algorithm: $F_2(x)=F_1(x)+h_1(x)$,
 
-5) Add this new tree to our algorithm: F3(x)=F2(x)+h1(x)F3(x)=F2(x)+h1(x),
+4) Fit the next decision tree to the residuals of $F_2: h_2(x)=y−F_2(x))$,
 
-6) Continue this process until some mechanism (i.e. cross validation) tells us to stop.
+5) Add this new tree to the algorithm: $F_3(x)=F_2(x)+h_1(x)$,
 
+6) Continue this process until some mechanism (i.e. cross validation) tells it to stop.
 
+To start, a base GBM is fitted with normal parameters, i.e. a small shrinkage, such between 0.01 and 0.001; the number of trees, `n.trees`, is between 3000 and 10000, and an interaction depth of 1.
 
-```{r}
+```{r loan_gbm}
+set.seed(525)
 
+# Casting loan status as {0,1} for caret purposes
+train_set_gbm <- train_set %>%  mutate(Loan_Status = ifelse(Loan_Status == "N",0,1))
+
+# fit base GBM model
+gbm.fit <- gbm(formula = Loan_Status ~.,
+               distribution = "bernoulli",
+               data = train_set_gbm,
+               n.trees = 10000,
+               interaction.depth = 1,
+               shrinkage = 0.001,
+               cv.folds = 5,
+               n.cores = NULL, # will use all cores by default
+               verbose = FALSE)  
+```
+```{r gbm_plots, fig.width=6, fig.height=4}
+# plot best iteration number
+p1 = gbm.perf(gbm.fit, method = "cv")
+```
+
+The plot above shows that the CV error starts leveling off at 3196 trees. So, the GBM is tuned to try to improve the model performance. The hyper-tuning parameters are:
+
+* Number of trees: The total number of trees to fit. GBMs often require many trees.   
+* Depth of trees: The number d of splits in each tree, which controls the complexity of the boosted ensemble. Each tree is a stump consisting of a single split.  
+* Learning rate: Controls how quickly the algorithm proceeds down the gradient descent. Smaller values reduce the chance of overfitting but also increases the time to find the optimal fit. This is also called shrinkage.  
+* Subsampling: Controls whether or not you use a fraction of the available training observations. This can help to minimize overfitting.   
+
+```{r gbm_model2}
 # for reproducibility
 set.seed(525)
 
 # train GBM model
-gbm.fit <- gbm(
-  formula = Loan_Status ~.,
-  distribution = "gaussian",
-  data = train_set,
-  n.trees = 10000,
-  interaction.depth = 1,
-  shrinkage = 0.001,
-  cv.folds = 5,
-  n.cores = NULL, # will use all cores by default
-  verbose = FALSE
-  )  
-
-# print results
-print(gbm.fit)
+gbm.fit2 <- gbm(formula = Loan_Status ~ .,
+                distribution = "bernoulli",
+                data = train_set_gbm,
+                n.trees = 3000,
+                interaction.depth = 2,
+                shrinkage = 0.01,
+                cv.folds = 5,
+                n.cores = NULL, # will use all cores by default
+                verbose = FALSE)  
 ```
 
+##### Improved Gradient Boosting Model
 
+Manually tweaking each hyperparamters can be time consuming, and less efficient than performing a grid search which iterates over every combination of hyperparameter values. This also allows to analyze which combination performs best. Therefore, a grid of hyperparameter conditions is constructed, and the algorithm will search across all the models with different learning rates and tree depths to determine the optimal fit. Firstly, there will be a lowering of the number of trees from 5000 to 30, because the values for optimal trees are all less than 30. Most of the shrinkage is shown as 0.3 and 0.1. `Interaction.depth` are 1, 3, 5. The `n.minobsinnode` values are 5, 10, 15. These will be used to create the new hyperparameter grid, and a new gradient boosting model is trained on the training set.
 
-
-```{r}
-# get MSE and compute RMSE
-sqrt(min(gbm.fit$cv.error))
-
-
-# plot loss function as a result of n trees added to the ensemble
-gbm.perf(gbm.fit, method = "cv")
-
-```
-
-We see that the CV error starts leveling off at 2648 trees. Here, we see that the minimum CV RMSE is 0.4055994 (this means on average our model is about 0.4055994 off from the actual loan status)
-
-###### Tuning
-
-Tuning of GBM:
-
-Number of trees: The total number of trees to fit. GBMs often require many trees
-Depth of trees: The number d of splits in each tree, which controls the complexity of the boosted ensemble. Each tree is a stump consisting of a single split. 
-Learning rate: Controls how quickly the algorithm proceeds down the gradient descent. Smaller values reduce the chance of overfitting but also increases the time to find the optimal fit. This is also called shrinkage.
-Subsampling: Controls whether or not you use a fraction of the available training observations. This can help to minimize overfitting 
-
-
-```{r}
+```{r loan_finalgbm}
 # for reproducibility
 set.seed(525)
 
-# train GBM model
-gbm.fit2 <- gbm(
-  formula = Loan_Status ~ .,
-  distribution = "gaussian",
-  data = train_set,
-  n.trees = 3000,
-  interaction.depth = 2,
-  shrinkage = 0.01,
-  cv.folds = 5,
-  n.cores = NULL, # will use all cores by default
-  verbose = FALSE
-  )  
-```
-
-We reduce the shrinkage from 0.001 to 0.01 and the number of trees ran to 5000. We also increase the depth of the trees from a single split to 2 splits. Compared to the above model, its RMSE is higher with 0.3931338.
-
-```{r}
-# find index for n trees with minimum CV error
-min_MSE <- which.min(gbm.fit2$cv.error)
-
-# get MSE and compute RMSE
-sqrt(gbm.fit2$cv.error[min_MSE])
-
-
-# plot loss function 
-gbm.perf(gbm.fit2, method = "cv")
-
-```
-
-
-Manually tweaking each hyperparamters can be time consuming and less efficient than performing a grid seach which iterates over every combination of hyperparameter values and also allows to analyze which combination performs best.
-
-First we want to construct our grid of hyperparameter conditions. We are doing a grid search across 81 models with different learning rates and tree depths.
-
-
-```{r}
 # create hyperparameter grid
-hyper_grid <- expand.grid(
-  shrinkage = c(.01, .1, .3),
-  interaction.depth = c(1, 3, 5),
-  n.minobsinnode = c(5, 10, 15),
-  bag.fraction = c(.65, .8, 1), 
-  optimal_trees = 0,               # a place to dump results
-  min_RMSE = 0                     # a place to dump results
-)
+hyper_grid <- expand.grid(n.trees = c(1:30),
+                          shrinkage = c(.01, .1, .3),
+                          interaction.depth = c(1, 3, 5),
+                          n.minobsinnode = c(5, 10, 15))
+# create training control
+control <- trainControl(method = "repeatedcv", 
+                        number = 10, 
+                        repeats = 3, 
+                        allowParallel = TRUE, 
+                        classProbs = TRUE)
 
-# total number of combinations
-nrow(hyper_grid)
-
+# train final GBM model
+gbm.model <- train(Loan_Status~.,
+                   data = train_set,
+                   method = "gbm", 
+                   metric = "Accuracy",
+                   trControl = control, 
+                   tuneGrid = hyper_grid,
+                   verbose = FALSE)
 ```
 
-Most of our top models use interaction.depth of 1 and a shrinkage of 0.30. The optimal trees are less than 15 for most of the top models. Comparing to the above models, the min_RMSE with the hyperparameter gave is lower by 0.06.
+Accuracy is one minus the error rate and is thus the percentage of correctly classified observations. The best tuning parameters for the gradient boosting model which resulted in the largest accuracy, i.e. the overall predicted accuracy of the model, is with a n.trees = 30, interaction.depth = 3, shrinkage = 0.1, and n.minobsinnode = 15. It has a model accuracy of 79.6%, and $\kappa$ = 0.47. In this case, it does not account for the largest portion of the variability in the data than all other variables, but it produces the smallest error which makes it the optimal fitting parameters. 
 
-```{r}
-# randomize data
-random_index <- sample(1:nrow(train_set), nrow(train_set))
-random_loan_train <- train_set[random_index, ]
+In addition, considering feature importance, once again, as will the other models, `Credit_History` = 1, representing rows with a credit history, is most contributing variable in the model. Following it are `LoanAmount`, `ApplicantIncome`, `CoapplicantIncome`, and, interestingly, `Property_Area`. 
 
-# grid search 
-for(i in 1:nrow(hyper_grid)) {
-  
-  # reproducibility
-  set.seed(525)
-  
-  # train model
-  gbm.tune <- gbm(
-    formula = Loan_Status ~ .,
-    distribution = "gaussian",
-    data = train_set,
-    n.trees = 5000,
-    interaction.depth = hyper_grid$interaction.depth[i],
-    shrinkage = hyper_grid$shrinkage[i],
-    n.minobsinnode = hyper_grid$n.minobsinnode[i],
-    bag.fraction = hyper_grid$bag.fraction[i],
-    train.fraction = .75,
-    n.cores = NULL, # will use all cores by default
-    verbose = FALSE
-  )
-  
-  # add min training error and trees to grid
-  hyper_grid$optimal_trees[i] <- which.min(gbm.tune$valid.error)
-  hyper_grid$min_RMSE[i] <- sqrt(min(gbm.tune$valid.error))
-}
+```{r rfplot, fig.width=5, fig.height=4}
+stats = data.frame(Model = "GBM",
+				   Accuracy = gbm.model$results$Accuracy[as.numeric(rownames(gbm.model$bestTune))],
+				   Kappa = gbm.model$results$Kappa[as.numeric(rownames(gbm.model$bestTune))])
 
-hyper_grid %>% 
-  dplyr::arrange(min_RMSE) %>%
-  head(10)
+plot(varImp(gbm.model, scale = TRUE), main = "Feature Importance: GBM Model")
 ```
 
-So for the next hyperparameter grid, we will be tuning some of the parameters. First we will lower 5000 number of trees to 30, because the values for optimal trees are all less than 30. Most of the shrinkage is show as 0.3 and 0.1. Interaction.depth are 1, 3, 5. The n.minobsinnode values are 5, 10, 15. The bag.fraction values are 0.65, 0.80, and 1.00. We will modify the new grid with these new values.
+Predicting `Loan_Status` for the test set returns an accuracy of approximately 82.3% with $\kappa$ of approximately 0.51. These values both exceed their training set counterparts.
 
-```{r}
-## Modifying hyperparameter grid
-
-hyper_grid <- expand.grid(
-  shrinkage = c(.01, .3, .1),
-  interaction.depth = c(1, 3, 5),
-  n.minobsinnode = c(5, 10, 15),
-  bag.fraction = c(.65, .8, 1), 
-  optimal_trees = 0,               # a place to dump results
-  min_RMSE = 0                     # a place to dump results
-)
-
-# total number of combinations
-nrow(hyper_grid)
-
-
-```
-
-```{r}
-
-# grid search 
-for(i in 1:nrow(hyper_grid)) {
-  
-  # reproducibility
-  set.seed(525)
-  
-  # train model
-  gbm.tune <- gbm(
-    formula = Loan_Status ~ .,
-    distribution = "gaussian",
-    data = train_set,
-    n.trees = 30,
-    interaction.depth = hyper_grid$interaction.depth[i],
-    shrinkage = hyper_grid$shrinkage[i],
-    n.minobsinnode = hyper_grid$n.minobsinnode[i],
-    bag.fraction = hyper_grid$bag.fraction[i],
-    train.fraction = .75,
-    n.cores = NULL, # will use all cores by default
-    verbose = FALSE
-  )
-  
-  # add min training error and trees to grid
-  hyper_grid$optimal_trees[i] <- which.min(gbm.tune$valid.error)
-  hyper_grid$min_RMSE[i] <- sqrt(min(gbm.tune$valid.error))
-}
-
-hyper_grid %>% 
-  dplyr::arrange(min_RMSE) %>%
-  head(10)
-
-```
-
-
-
-###### Visualization
-
-Using the new modifications we are able to obtain our best model:
-shrinkage = 0.30, interaction.depth = 1, n.minobsinnode = 5, bag.fraction = 1.00, optimal_trees = 7. The min_RMSE for this model is 0.380. 
-
-
-```{r}
-# for reproducibility
+```{r gbmpred, echo = FALSE}
 set.seed(525)
-
-# train GBM model
-gbm.fit.final <- gbm(
-  formula = Loan_Status ~ .,
-  distribution = "gaussian",
-  data = train_set,
-  n.trees = 7,
-  interaction.depth = 1,
-  shrinkage = 0.3,
-  n.minobsinnode = 5,
-  bag.fraction = 1, 
-  train.fraction = 1,
-  n.cores = NULL, # will use all cores by default
-  verbose = FALSE
-  )  
-
+loan_gbm_pred <- predict(gbm.model, newdata = test_set)
+stats = postResample(pred = loan_gbm_pred, obs = test_set$Loan_Status)
 ```
 
+The confusion matrix results suggest that 82.3% of the predicted results seem to be correctly classified. Precision indicates how many of the correctly predicted cases actually turned out to be positive. With the gradient boosting model, the precision for loan approval was fairly good at 81.2%, whereas the recall, or how many of the actual positive cases that the model was able to predict correctly, highlights that 97.3% have been correctly classified. In all, this model is capable of classifying loan approval status with good accuracy. And lastly, the Kappa statistic of 0.51 suggests that the overall accuracy of this model is better than the expected random chance classifier's accuracy.
 
-
-```{r}
-
-par(mar = c(5, 8, 1, 1))
-summary(
-  gbm.fit.final, 
-  cBars = 10,
-  method = relative.influence, # also can use permutation.test.gbm
-  las = 2
-  )
-
+```{r gbmmatrix}
+(confusionMatrix(loan_gbm_pred, test_set$Loan_Status, mode = "everything", positive = "Y"))
 ```
-
-We want to see which variables have the largest influence on Loan Status. We see Credit_History have the largest influence on Loan Status. 
-
-cBars allows you to adjust the number of variables to show (in order of influence).
-
-method = relative.influence: At each split in each tree, gbm computes the improvement in the split-criterion (MSE for regression). gbm then averages the improvement made by each variable across all the trees that the variable is used. The variables with the largest average decrease in MSE are considered most important.
-
-###### Predicting
-
-```{r}
-model_type.gbm <- function(x, ...) {
-  return("regression")
-}
-
-predict_model.gbm <- function(x, newdata, ...) {
-  pred <- predict(x, newdata, n.trees = x$n.trees)
-  return(as.data.frame(pred))
-}
-
-
-```
-
-###### Lime
-
-```{r}
-# get a few observations to perform local interpretation on
-local_obs <- test_set[1:2, ]
-
-# apply LIME
-explainer <- lime(train_set, gbm.fit.final)
-explanation <- explain(local_obs, explainer, n_features = 5)
-plot_features(explanation)
-```
-
-
-Using LIME to understand why a prediction resulted in a given value for a single observation. We will select two observations from test_set. The results show the predicted value of Case 2: 1.74 and Case 6: 1.74, the model fit is pretty good and the most influential variables driving the predicted value for each observation, Credit_History. 
-
-```{r}
-# predict values for test data
-pred <- predict(gbm.fit.final, n.trees = gbm.fit.final$n.trees, test_set)
-
-test_set$Loan_Status<-as.numeric(test_set$Loan_Status)
-
-# results
-caret::RMSE(pred, test_set$Loan_Status)
-
-
-```
-
-Using the hyperparameter grid search as our final model, we want to use it to predict new observations. 
-
-
-
 
 #### Model Performance 
 
-#### Conclusions
+In binary classification, often, the measures of focus are precision and recall, as opposed to accuracy. A measure combining this is the F1 score, defined as twice the sum of precision and recall divided by their product. Another oft-used metric is the area under the receiver operating curve, AUC. In this case, the following three metrics, i.e. Accuracy, F1, and AUC, will be compared to select the model that performs best in at least two of the three metrics.
 
+Once again, below shows the confusion matrices for the three models, followed by a table with the selected performance criteria for comparison. 
+
+```{r comparison}
+# Create table to hold model comparison statistics
+compTable = data.frame(Models = c('Model 1: Decision Tree', 
+                                  'Model 2: Random Forest', 
+                                  'Model 3: Gradient Boosting'),
+                       ACC = double(3),
+                       F1 = double(3),
+                       AUC = double(3))
+```
+
+##### Model 1: Decision Tree
+```{r m1TestSet}
+# Model 1 Performance: Calculate accuracy statistics
+pred.R = predict(dt.model, newdata = test_set, type = "raw")
+pred.P = predict(dt.model, newdata = test_set, type = "prob")
+m1CM = confusionMatrix(pred.R, test_set$Loan_Status, mode = "everything")
+m1CM$table
+compTable[1, 2] = sum(diag(m1CM$table)) / sum(m1CM$table)
+compTable[1, 3] = m1CM$byClass[7]
+compTable[1, 4] = auc(response = test_set$Loan_Status, predictor = pred.P[, 2])
+```
+
+##### Model 2: Random Forest
+```{r m2TestSet}
+# Model 2 Performance: Calculate accuracy statistics
+pred.R = predict(rf.model, newdata = test_set, type = "raw")
+pred.P = predict(rf.model, newdata = test_set, type = "prob")
+m2CM = confusionMatrix(pred.R, test_set$Loan_Status, mode = "everything")
+m2CM$table
+compTable[2, 2] = sum(diag(m2CM$table)) / sum(m2CM$table)
+compTable[2, 3] = m2CM$byClass[7]
+compTable[2, 4] = auc(response = test_set$Loan_Status, predictor = pred.P[, 2])
+```
+
+##### Model 3: Gradient Boosting
+```{r m3TestSet}
+# Model 3 Performance: Calculate accuracy statistics
+pred.R = predict(gbm.model, newdata = test_set, type = "raw")
+pred.P = predict(gbm.model, newdata = test_set, type = "prob")
+m3CM = confusionMatrix(pred.R, test_set$Loan_Status, mode = "everything")
+m3CM$table
+compTable[3, 2] = sum(diag(m3CM$table)) / sum(m3CM$table)
+compTable[3, 3] = m3CM$byClass[7]
+compTable[3, 4] = auc(response = test_set$Loan_Status, predictor = pred.P[, 2])
+```
+
+##### Selected Performance Statistics
+```{r selperfstat}
+# Display Model Comparison
+kable(compTable, digits = 3L, caption = "Model Test Results") %>%
+  kable_styling(bootstrap_options = "striped", full_width = TRUE)
+```
+
+#### Conclusion
+
+All the models performed very well and classified the majority of the test set properly. The difference between the three models was very slight. False negatives were the lowest with the Random Forest model, than the other two, while there were more false positives with Gradient Boosting model. Given the above statistics and confusion matrices, **Model 2: Random Forest** barely edged out the other two models with the best accuracy and F-1 score, and is selected as the optimal model to predict loan approval.
+
+This analysis highlights that loan approval data is strongly influenced by credit history and income of the individuals applying for the loan. Each  models presented it to have the most impact on the model. However, these models were not trained on a well-balanced dataset, and this imbalance is felt in spite of cross-validation. More specifically, even the optimal model, the random forest model, predicts approved loan applications well but rejected applications poorly. Having additional observations for the negative class would be ideal, but otherwise, it is recommended that any extension of this analysis should consider resampling the training set –- perhaps over-sampling the negative class or testing additional resamples -– to promote better balance across `Loan_Status` classes. 
 
 ### Works Cited
 
 1. Horst AM, Hill AP, Gorman KB (2020). *palmerpenguins: Palmer Archipelago (Antarctica) penguin data. R package version 0.1.0*. https://allisonhorst.github.io/palmerpenguins/. doi:10.5281/zenodo.3960218.
 2. Kuhn M, Johnson K (2013). *Applied Predictive Modeling*. Springer Science+Business Media.
-3. Wright MN, Wager S, Probst P (2020). *Package 'ranger'*. Accessed April 4, 2021 from https://cran.r-project.org/web/packages/ranger/ranger.pdf.
-4. UC Business Analytics R Programming Guide. http://uc-r.github.io/gbm_regression
-5. DataCamp.What are the hyperparameters for a decision tree?. https://campus.datacamp.com/courses/tree-based-models-in-r/regression-trees?ex=7
-6. datascievo. Decision Tree in R | A Real Guide on Titanic Dataset with Code. https://www.datascievo.com/decision-tree-in-r/ 
-7. Guru99. Decision Tree in R | Classification Tree & Code in R with Example. https://www.guru99.com/r-decision-trees.html
-8. DataFlair. R Decision Trees – The Best Tutorial on Tree Based Modeling in R!. https://data-flair.training/blogs/r-decision-trees/
-
+3. Wright MN, Wager S, Probst P (2020). [*Package 'ranger'*.](https://cran.r-project.org/web/packages/ranger/ranger.pdf)
+4. UC Business Analytics R Programming Guide.[*Gradient Boosting Machines.*](http://uc-r.github.io/gbm_regression)
+5. DataCamp. [*What are the hyperparameters for a decision tree?.*](https://campus.datacamp.com/courses/tree-based-models-in-r/regression-trees?ex=7)
+6. datascievo. [*Decision Tree in R | A Real Guide on Titanic Dataset with Code.*](https://www.datascievo.com/decision-tree-in-r/) 
+7. Guru99. [*Decision Tree in R | Classification Tree & Code in R with Example.*](https://www.guru99.com/r-decision-trees.html)
+8. DataFlair. [*R Decision Trees – The Best Tutorial on Tree Based Modeling in R!*.](https://data-flair.training/blogs/r-decision-trees/)
 
 ### Code Appendix
 
@@ -1104,11 +965,11 @@ knitr::opts_chunk$set(echo=TRUE, eval=FALSE)
 
 ```{r loadpeng}
 ```
-```{r pengdist, fig.width=8}
+```{r pengdist}
 ```
 ```{r pengsumm}
 ```
-```{r pengcorrgram, fig.height=5.5}
+```{r pengcorrgram}
 ```
 ```{r split}
 ```
@@ -1124,7 +985,7 @@ knitr::opts_chunk$set(echo=TRUE, eval=FALSE)
 ```
 ```{r pengmodel}
 ```
-```{r pengplot,fig.height=4, fig.width=8}
+```{r pengplot}
 ```
 ```{r pengCMx}
 ```
@@ -1163,4 +1024,54 @@ knitr::opts_chunk$set(echo=TRUE, eval=FALSE)
 ```{r loan_impute}
 ```
 ```{r loan_tts}
+```
+```{r loanboruta}
+```
+```{r loantransform}
+```
+```{r loan_dt1}
+```
+```{r loan_dt_plot}
+```
+```{r loan_dt_CMx}
+```
+```{r loan_dt2}
+```
+```{r loan_dt_CMx2}
+```
+```{r loan_dt_ctree}
+```
+```{r rf}
+```
+```{r rfplots}
+```
+```{r rfpred}
+```
+```{r rfmatrix}
+```
+```{r rfroc}
+```
+```{r loan_gbm}
+```
+```{r gbm_plots}
+```
+```{r gbm_model2}
+```
+```{r loan_finalgbm}
+```
+```{r rfplot}
+```
+```{r gbmpred}
+```
+```{r gbmmatrix}
+```
+```{r comparison}
+```
+```{r m1TestSet}
+```
+```{r m2TestSet}
+```
+```{r m3TestSet}
+```
+```{r selperfstat}
 ```
