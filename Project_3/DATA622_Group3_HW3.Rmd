@@ -43,12 +43,11 @@ library(rpart.plot)
 
 In this project, there are two analyses carried out using two different datasets: 1) the Palmer Penguins dataset and 2) a Loan Approvals dataset. Thus, this project is divided into two sections accordingly. 
 
-Section 1, Palmer Penguins, investigates K-Nearest Neighbor (KNN) algorithm to predict species of penguin, and it is compared to previous five multi-classification models, namely Multinomial Logistic Regression, Linear Discriminant Analysis (LDA), Quadratic Discriminant Analysis (QDA), and Naive Bayes classification models.
+Section 1, Palmer Penguins, investigates the K-Nearest Neighbor (KNN) algorithm to predict species of penguin, and it is compared to four previous multi-classification models, namely Multinomial Logistic Regression, Linear Discriminant Analysis (LDA), Quadratic Discriminant Analysis (QDA), and Naive Bayes classification models.
 
-Section 2, Loan Approval, a dataset on loan approval status is used to predict loan approval using
-Decision Trees, Random Forests, and Gradient Boosting Machines (GBM). Each analysis is conducted with a thorough explanation of the reasoning behind all the steps taken. In the end, there is a comparison of the model performance and the optimal model is selected.
+Section 2, Loan Approval, compares the performance of Decision Trees, Random Forests, and Gradient Boosting Machines (GBM) in predicting loan approval using a dataset composed of loan applicant data. Each analysis is conducted with a thorough explanation of the reasoning behind all the steps taken. In the end, model performance is measured using Accuracy, F1, and AUC and the optimal model is selected.
 
-The last two sections present references used during this analysis, and the written R codes in a technical appendx.
+The last two sections present references used during this analysis and the written R codes in a technical appendix.
 
 ***
 <center> **PROJECT SECTIONS** </center>
@@ -110,9 +109,9 @@ ggplot(drop_na(penguins), aes(x = reorder(species), fill = species)) +
   labs(title = "Distibution of Species by Island Habitat", y = "Frequency", x = "Species")
 ```
 
-There were `r ntrobs` observations of 4 numeric predictor variables and 2-factor predictor variables, namely `island`, and `sex`.  There is also a `year` variable that is ignored in this analysis. The data set did not have complete cases, and there is a presence of bi- and tri-modal distributions, which suggests that there are differences among the penguin species. 
+There are `r ntrobs` observations of 4 numeric predictor variables and 2-factor predictor variables, namely `island`, and `sex`.  There is also a `year` variable that is ignored in this analysis. The data set does not have complete cases, and there is a presence of bi- and tri-modal distributions, which suggests that there are differences among the penguin species. 
 
-Lastly, it is noted that Adelie and Chinstrap measurements overlap for all variables except bill length. This feature is a definitive variable that produces complete separation among the penguin species into groups. This perfectly discriminating variable will be removed to get a reasonable estimate for the variables that can predict the outcome variable.
+Lastly, it is noted that Adelie and Chinstrap measurements overlap for all variables except bill length. This feature is a definitive variable that produces a complete separation of penguin species into groups. This perfectly discriminating variable will be removed to get a reasonable estimate for the variables that can predict the outcome variable.
 
 ```{r pengsumm}
 dfSummary(penguins, plain.ascii = TRUE, style = "grid", graph.col = FALSE, footnote = NA)
@@ -120,11 +119,11 @@ dfSummary(penguins, plain.ascii = TRUE, style = "grid", graph.col = FALSE, footn
 
 #### Data Preparation 
 
-The summary above indicates the amount of missing data in the penguin dataset. It appears that more than 3% of the missing data was from the `sex` variable. This further suggests that nearly 97% were complete. There were no missingness patterns, and their overall proportion was not very extreme. As a result, missingness can be corrected by imputation.
+The summary above indicates the amount of missing data in the penguin dataset. It appears that more than 3% of the missing data is from the `sex` variable. This further suggests that nearly 97% is complete. There are no missingness patterns, and the overall proportions are not very extreme. As a result, missingness can be corrected by imputation.
 
-Further exploration revealed that no variable seems to be strongly influenced by any outliers. An outlier is an observation that lies an abnormal distance from other values in a random sample. Outliers in the data could distort predictions and affect the accuracy, therefore, these would need to be corrected. 
+Further exploration reveals that no variable seems to be strongly influenced by any outliers. An outlier is an observation that lies an abnormal distance from other values in a random sample. Outliers in the data could distort predictions and affect the accuracy, therefore, these would need to be corrected. 
 
-To build a smaller model without predictors with extremely high correlations, it is best to reduce the number of predictors such that there were no absolute pairwise correlations above 0.90. The correlogram below graphically represents the correlations between the numeric predictor variables, when ignoring the missing variables. Most of the numeric variables were uncorrelated with one another, but there were a few highly correlated pairs. From the correlogram, the relationship between the `body_mass_g` and `flipper_length_mm` is a highly positive correlation, and within reason, as larger flippers would indicate an increase in body mass. There are some variables with moderate correlations, but their relationship is also intuitive. However, no relationship was too extreme, and it is clear that Adelie and Chinstrap overlap for all variable measurements except bill length. This feature is identified as the definitive variable that produces complete separation among the penguin species into groups.
+To build a smaller model without predictors with extremely high correlations, it is best to reduce the number of predictors such that there are no absolute pairwise correlations above 0.90. The correlogram below graphically represents the correlations between the numeric predictor variables, when ignoring the missing variables. Most of the numeric variables are uncorrelated with one another, but there are a few highly correlated pairs. From the correlogram, the relationship between the `body_mass_g` and `flipper_length_mm` is a highly positive correlation, and within reason, as larger flippers indicate an increase in body mass. There are some variables with moderate correlations, but their relationships are also intuitive. However, no relationship was too extreme, and it is clear that Adelie and Chinstrap overlap for all variable measurements except bill length. This feature is identified as the definitive variable that produces complete separation among the penguin species into groups.
  
 ```{r pengcorrgram, fig.height=5.5}
 ggpairs(penguins, columns = 3:6, title = "Correlogram of Variables", 
@@ -135,7 +134,7 @@ ggpairs(penguins, columns = 3:6, title = "Correlogram of Variables",
 
 ##### Training & Testing Split
 
-The models were trained on the same approximately 70% of the data set, reserving 30% for validation of which model to select for the species class on the test set. This will allow for the test via cross-validation scheme of the model to tune parameters for optimal performance. 
+The models are trained on 70% of the data set. The remaining 30% is used for validation. This allows for the test via cross-validation scheme to tune parameters for optimal performance. 
 
 ```{r split}
 # Create training and testing split
@@ -187,7 +186,7 @@ test_peng.p$island = factor(test_peng.p$island)
 
 ##### Feature Selection
 
-To identify which features are important when building a predictive model, feature selection is conducted to assist in choosing variables that are useful in predicting the response. The possible features that have the most impact on classifying penguin species are listed below. This was done by using the random forest algorithm to performs a top-down search for relevant features and comparing the original attributes' importance with the importance achievable at random. It shows that `bill_length_mm` is indeed the most contributing variable followed by `flipper_length_mm`, and so on. 
+Feature selection is done using the random forest algorithm to identify the most important features for prediction. This method uses a top-down search for relevant features and compares the original attributes' importance with the importance achievable at random. It shows that `bill_length_mm` is indeed the most contributing variable followed by `flipper_length_mm`, and so on.
 
 ```{r pengboruta}
 output = Boruta(train_peng.r ~ ., data = train_peng.p, doTrace = 0)  
@@ -199,18 +198,18 @@ kable(head(importance[order(-importance$meanImp), ]),
   kable_styling(bootstrap_options = "striped", full_width = TRUE)
 ```
 
-All in all, the following decisions were made based on the feature selection investigation:
+All in all, the following decisions are made based on the feature selection investigation:
 
 * The `flipper_length_mm` and `bill_depth_mm` are the most likely contributing variables that will be in the model.  
-* However, the `bill_length_mm` variable is removed due to it being a perfectly discriminating variable.   
+* The `bill_length_mm` variable is removed due to it being a perfectly discriminating variable.   
 * Due to the high correlation with `flipper_length_mm`, `body_mass_g` is removed to avoid collinearity.  
 * The `sex` variable is removed as it does not contribute based on the feature selection investigation.
-* The `island` variable was kept and evaluated per model in the previous sections on how much of a contribution difference it makes based on the algorithm and algorithm assumptions. For the KNN model, it will be ignored. 
+* The `island` variable is kept and evaluated per models in the previous sections on how much of a contribution difference it makes based on the algorithm and algorithm assumptions. For the KNN model, it will be ignored. 
 * The `year` variable is ignored.  
 
 ##### Normality & Linearity 
 
-The data were then pre-processed to fulfill the assumption of normality, i.e., each quantitative variable $~N(\mu,\sigma) = (0,1)$ by centering and scaling. Normalization ensures that each variable has equal influence when calculating the Euclidean distance, else a variable with a larger scale would add bias to calculation.
+The data is then pre-processed to fulfill the assumption of normality, i.e., each quantitative variable $~N(\mu,\sigma) = (0,1)$, by centering and scaling. Normalization ensures that each variable has equal influence when calculating the Euclidean distance, else a variable with a larger scale would add bias to calculation.
 
 ```{r normality}
 set.seed(525)
@@ -250,9 +249,9 @@ plot(varImp(knnModel), main = "Rank of Most Important Variable")
 
 #### Model Discussion 
 
-Per accuracy, the best tune for the KNN model is k = 5. It has accuracy = 80.5%, and $\kappa$ = 0.69. This tune accounts for the largest portion of the variability in the data than all other latent variables. Moreover, the variable that contributed the most to identifying Adelie and Gentoo is the flipper length, while bill depth was the most important variable to help classify Chinstrap. From the results based on the test data, the KNN model did exceptionally well in classifying the test set. Thus, the optimal model has an accuracy of 80.4% and $\kappa$ = 0.68 on the test set. 
+The best tune for the KNN model measured by accuracy is k = 5. It has accuracy = 80.5% and $\kappa$ = 0.69. This tune accounts for the largest portion of the variability in the data. Moreover, the variable that contributes the most to identifying Adelie and Gentoo is `flipper_length_mm`, while `bill_depth_mm` is the most important variable in identifying Chinstrap. From the results based on the test data, the KNN model did exceptionally well in classifying the test set. Thus, the optimal model has an accuracy of 80.4% and $\kappa$ = 0.68 on the test set. 
 
-In terms of the confusion matrix, the results suggest that 80.4% of the predicted results seem to be correctly classified. The precision for each type of species is also high (Adelie = 74%, Chinstrap = 54%, and Gentoo = 100%), suggesting that the penguins belong to the actual species among all the penguins predicted to be that particular species, with Gentoos being classified correctly 100% of the time. Moreover, the recall highlights that 87% of the Adelie species have been correctly classified accordingly, whereas 35% of the Chinstrap species have been correctly classified, and 97% of the Gentoo species have been correctly classified. In all, this model is capable of classifying penguins into one of the three species with great accuracy, particularly Gentoo species which was expected as their measurements were quite different. And lastly, the Kappa statistic of 0.68 suggests that the overall accuracy of this model is better than the expected random chance classifier's accuracy.
+In terms of the confusion matrix, the results suggest that 80.4% of the predicted results are correctly classified. The precision for each type of species is also high (Adelie = 74%, Chinstrap = 54%, and Gentoo = 100%), suggesting that the penguins belong to the actual species among all the penguins predicted to be that particular species, with Gentoos being classified correctly 100% of the time. Moreover, the recall highlights that 87% of the Adelie species have been correctly classified accordingly, whereas 35% of the Chinstrap species have been correctly classified, and 97% of the Gentoo species have been correctly classified. In all, this model is capable of classifying penguins into one of the three species with great accuracy, particularly Gentoo species which was expected as their measurements were quite different. And lastly, the Kappa statistic of 0.68 suggests that the overall accuracy of this model is better than the expected random chance classifier's accuracy.
 
 ```{r pengCMx}
 set.seed(525)
@@ -262,7 +261,7 @@ confusion = confusionMatrix(pred.R, test_peng.r, mode = "everything")
 confusion
 ```
 
-Next, a receiver operating characteristic (ROC) analysis is shown in Figure 1. The area under the curve (AUC) for each class was estimated for observed penguin species and their predicted values by fitting the KNN model. The multi-class area under the curve for the predicted penguin species is the mean for all three AUC. It was computed to be 0.854. That is, there is an 85.4% chance that the model will be able to distinguish among the three penguin species. 
+Next, a receiver operating characteristic (ROC) analysis is shown in Figure 1. The area under the curve (AUC) for each class is estimated for observed penguin species and their predicted values by fitting the KNN model. The multi-class area under the curve for the predicted penguin species is the mean for all three AUC. It is computed to be 0.854. That is, there is an 85.4% chance that the model will be able to distinguish among the three penguin species. 
 
 <center> Fig 1: ROC Curves of the KNN Model </center>
 
@@ -283,7 +282,7 @@ legend("bottomright",
 
 #### Conclusion
 
-Given the `palmerpenguins` dataset, five multi-classification models, namely multinomial logistic regression, LDA, QDA, Naive Bayes, and KNN models were fitted. From previous analyses, each model had its strengths and weakness on the same cleaned training dataset, and in the end, the results were as follows:
+Given the `palmerpenguins` dataset, five multi-classification models (multinomial logistic regression, LDA, QDA, Naive Bayes, and KNN models) were fitted. From previous analyses, each model had its strengths and weakness on the same cleaned training dataset, and in the end, the results are as follows:
 
 Model | Accuracy
 ------|------
@@ -293,7 +292,7 @@ Quadratic Discriminant Analysis | 0.83
 *Naive Bayes* | *0.92*
 K Nearest Neighbor | 0.80
 
-Of all the classification models used to classify the penguin species, the Naive Bayes model's ability was proved to be near-optimal. Adelie and Gentoo were seen to be classified easily based on the flipper length, as it was the most important variable used in the classification. Whereas, for Chinshtrap, it was the bill depth. In conclusion, the Naive Bayes classifier produced a model that is 92.1% accurate in correctly classifying penguins into `Adelie`, `Chinstrap`, and `Gentoo`. This model also had an error rate of 0.161 between the measurements, which is the smallest than what the other models determined.
+Of all the classification models used to classify the penguin species, the Naive Bayes model's ability proved to be near-optimal. Adelie and Gentoo were seen to be classified easily based on the flipper length, as it was the most important variable used in the classification. Whereas, for Chinshtrap, it was the bill depth. In conclusion, the Naive Bayes classifier produced a model that is 92.1% accurate in correctly classifying penguins into `Adelie`, `Chinstrap`, and `Gentoo`. This model also had an error rate of 0.161 between the measurements, which is the smallest than what the other models determined.
 
 ***
 
@@ -349,7 +348,7 @@ loan_df %>%
 
 #### Understanding the Data
 
-Below is highlights the summary statistics for the dataset: 
+Below highlights the summary statistics for the dataset: 
 
 ```{r loan_summary}
 dfSummary(loan_df, plain.ascii = TRUE, style = "grid", graph.col = FALSE, footnote = NA)
@@ -357,8 +356,8 @@ dfSummary(loan_df, plain.ascii = TRUE, style = "grid", graph.col = FALSE, footno
 
 It should be noted that: 
 
-* Seven of the 12 variables have missing values, which will be corrected in the later sections. 
-* The frequency of almost all of the categorical variables are unequally in proportion: `Gender` (more males than females), `Married` (more married loan applicants than single), `Education` (more graduates than non-graduates), `Self_Employed` (less self-employed individuals), and `Credit History` (more individuals with credit history than not).
+* Seven of the twelve variables have missing values, which will be corrected in the later sections. 
+* The frequency of almost all of the categorical variables are unequally proportioned: `Gender` (more males than females), `Married` (more married loan applicants than single), `Education` (more graduates than non-graduates), `Self_Employed` (less self-employed individuals), and `Credit History` (more individuals with credit history than not).
 
 ##### Categorical Features
 
@@ -444,7 +443,7 @@ tab_emp %>%
   labs(title = 'Approved Loans by Employment Status', y = "Percentage", x = "Self-Employed")
 ```
 
-`Credit History`: This factor appears to be more impactful on the final approval! Nearly 80% of individuals with a credit history are approved versus only 8% for those with no credit history. 
+`Credit History`: Credit history appears to be the most impactful on the final approval! Nearly 80% of individuals with a credit history are approved versus only 8% for those with no credit history. 
 
 ```{r loan_credit, fig.height=3.5}
 tab_cred <- with(loan_df, table(Credit_History, Loan_Status))
@@ -596,7 +595,7 @@ kable(head(importance[order(-importance$meanImp), ]),
   kable_styling(bootstrap_options = "striped", full_width = TRUE)
 ```
 
-Four features perform at least as well as the best performing randomized feature. By looking at the table, the most contributing feature in the data is `Credit-History` with a mean importance that is above 50. `Credit_History` has already been suggestive of its importance from the variable exploration, and it is the feature that allows loan givers judge if individuals can pay for their bills on time, or if they are generally late with their payments. The other importance features that follow are `ApplicantIncome` and `CoapplicantIncome`, which is understandable as when it comes to loans, loan givers would want to reassurance that the individuals have enough income to repay for the loan.  
+Four features perform at least as well as the best performing randomized feature. By looking at the table, the most contributing feature in the data is `Credit-History` with a mean importance that is above 50. `Credit_History` has already been suggestive of its importance from the variable exploration, and it is the feature that allows loan givers to judge if individuals can pay for their bills on time, or if they are generally late with their payments. The other importance features that follow are `ApplicantIncome` and `CoapplicantIncome`, which is understandable as when it comes to loans, loan givers would want to reassurance that the individuals have enough income to repay for the loan.  
 
 #### Normality & Linearity
 
@@ -617,13 +616,14 @@ test_set <- test_set %>%
 #### Building the Models
 ##### Model #1: Decision Trees
 
-Decision tree is a machine learning algorithm that is very versatile that is able to perform classification and regression tasks. When it comes to a decision tree, there are important terms that one should know, and these are: 
-* root nodes - they represent the whole population or sample, which then gets divided within two or more.  
-* splitting - is when the nodes get divided into two or more.  
-* decision node - when a sub node splits.  
-* terminal or leaf - when the node no longer splits.  
-* branch - sub-section of the entire tree.  
-* parent-node - is when a node is divided into sub-nodes.  
+Decision tree is a versatile machine learning algorithm that is able to perform classification and regression tasks. When it comes to a decision tree, there are important terms that one should know, and these are: 
+
+* **root nodes** - represent the whole population (or sample) and get further divided
+* **splitting** - when nodes get divided into two or more  
+* **decision node** - when a sub node splits  
+* **terminal or leaf** - when a node no longer splits 
+* **branch** - sub-section of the entire tree  
+* **parent-node** - when a node is divided into sub-nodes  
 
 The decision tree is fitted on the training set, and visualized below.  
 
@@ -654,7 +654,7 @@ The complexity parameter allows one to choose the optimal tree size. Thus, using
 
 ##### Improved Decision Tree (with Hyperparameters)
 
-For this decision tree model, there is the inclusion of the complexity parameter of 0.011 as a hyperparameter, which was obtained from the first model. One might wonder how does using complexity parameter change the decision, and by looking at the updated plot, the model has drastically changed. 
+For this decision tree model, there is the inclusion of the complexity parameter of 0.011 as a hyperparameter, which was obtained from the first model. One might wonder how using a complexity parameter changes the decision, and by looking at the updated plot, the model has drastically changed. 
 
 ```{r loan_dt2, fig.height=4}
 set.seed(525)
@@ -680,7 +680,7 @@ dt.model = train(Loan_Status ~.,
 
 This only showcases `Credit_History` as the most important feature, which is not surprising since the mean importance was so high that no other feature was even close.  
 
-The error rate of this model is just a straight line, and the accuracy and kappa statistic have improved after using the complexity parameter, accuracy = 82.9% and $\kappa$ = 0.52. The false positive is only 2, and the false negative is at 22.(at the time this was run) The improved model did better at predicting the loan approval status than the base decision tree model.
+The error rate of this model is just a straight line, and the accuracy and kappa statistic have improved after using the complexity parameter, accuracy = 82.9% and $\kappa$ = 0.52. The false positive is only 2 and the false negative is 22. The improved model does better at predicting the loan approval status than the base decision tree model.
 
 ```{r loan_dt_CMx2}
 unseen_prediction1 <-predict(dt.model, test_set, type = 'raw')
@@ -689,7 +689,7 @@ confusionMatrix(table(unseen_prediction1, test_set$Loan_Status))
 
 ##### Conditional Parting Plot 
 
-Lastly, the plot below show the regression relationship of the conditional inference trees estimate that is partitioned by binary recursive in a framework that is conditional inference. It shows that credit history is the most important feature. Here you can see that, and that n = 56 is the number without a credit history, and n = 297 is the number with a credit history. 
+Lastly, the plot below shows the regression relationship of the conditional inference trees estimate that is partitioned by binary recursive in a framework that is conditional inference. It shows that credit history is the most important feature. Here you can see that, and that n = 56 is the number without a credit history, and n = 297 is the number with a credit history. 
 
 ```{r loan_dt_ctree}
 set.seed(525)
@@ -855,7 +855,7 @@ gbm.model <- train(Loan_Status~.,
 
 Accuracy is one minus the error rate and is thus the percentage of correctly classified observations. The best tuning parameters for the gradient boosting model which resulted in the largest accuracy, i.e. the overall predicted accuracy of the model, is with a n.trees = 30, interaction.depth = 3, shrinkage = 0.1, and n.minobsinnode = 15. It has a model accuracy of 79.6%, and $\kappa$ = 0.47. In this case, it does not account for the largest portion of the variability in the data than all other variables, but it produces the smallest error which makes it the optimal fitting parameters. 
 
-In addition, considering feature importance, once again, as will the other models, `Credit_History` = 1, representing rows with a credit history, is most contributing variable in the model. Following it are `LoanAmount`, `ApplicantIncome`, `CoapplicantIncome`, and, interestingly, `Property_Area`. 
+In addition, considering feature importance, once again, as with the other models, `Credit_History` = 1, representing rows with a credit history, is most contributing variable in the model. Following it are `LoanAmount`, `ApplicantIncome`, `CoapplicantIncome`, and, interestingly, `Property_Area`. 
 
 ```{r rfplot, fig.width=5, fig.height=4}
 stats = data.frame(Model = "GBM",
