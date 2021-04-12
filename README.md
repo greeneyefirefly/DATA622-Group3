@@ -8,4 +8,8 @@ Collaborators:
 [Tony Mei](https://github.com/Sizzlo)   
 [Charlie Rosemond](https://github.com/chrosemo) 
 
-Our published work can be found on [RPub](https://rpubs.com/greeneyefirefly/data622-project3).
+Our published Project #3 can be found on [RPub](https://rpubs.com/greeneyefirefly/data622-project3).
+
+Our published Project #4 can be found on [RPub](https://rpubs.com/greeneyefirefly/data622-project4).
+
+Our published Final Project can be found on [RPub](https://rpubs.com/greeneyefirefly/data622-finalproject).
