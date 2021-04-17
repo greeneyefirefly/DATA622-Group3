@@ -70,22 +70,128 @@ BB | Psychiatric Meds |  0 - none; 1 - one psychotropic med; 2 - more than one p
 
 ```{r load}
 df <- read_csv("https://raw.githubusercontent.com/greeneyefirefly/DATA622-Group3/main/Project_4/ADHD_data.csv")
-#dim(df)
-df <- df %>% rename_all(make.names) %>% select(-Initial)
+df <- df %>% rename_all(make.names)
 ```
 
 ```{r summarystats}
-skim(df)
+skim(df) %>% 
+  dplyr::select(-n_missing, -numeric.sd, -numeric.p25, -numeric.p75)
 ```
+
+Summary statistics reveal useful information to inform pre-processing and modeling. First, the demographic and questionnaire features are entirely complete, though missingness is present elsewhere. Notably, SVM response `Suicide` is approximately 93 percent complete, and `Psych.meds.` is only approximately 33 percent complete. Second, the feature distributions could require transformation prior to modeling. Some of the questionnaire features show clear skewness (e.g., `ADHD.Q12`) or imbalance (e.g., `MD.Q1g`), while many of the substance use/abuse features appear heavily imbalanced towards "no use". Here again, response `Suicide` is imbalanced towards "no attempt". And third, feature `ADHD.Q5` has at least one value of "5", which, per documentation, appears to be an error. This feature value is changed to missing.
+
+```{r data}
+#df %>% filter(ADHD.Q5 == 5) # 1 sample
+df$ADHD.Q5[df$ADHD.Q5 == 5] <- NA
+```
+
+Beyond the to-be-dropped `Initial`, all dataset features are loaded in numeric format, though many of them are categorical if not ordinal in nature. These features thus require conversion to [ordinal] factors. Missing values "NA" are treated as a level, and where applicable, ordered lowest.
 
 ```{r initproc}
-#df <- df %>% rename_all(make.names)
-#df[,c(3,4,47,51)] <- lapply(df[,c(3,4,47,51)], function(x) factor(x, ordered=FALSE, exclude=NA))
-#df[,c(5:22,24:38,40:46,48:50,52:54)] <- lapply(df[,c(5:22,24:38,40:46,48:50,52:54)], function(x) factor(x, ordered=TRUE, exclude=NA))
+df[,c(3,4,24:37,46,48:51)] <- lapply(df[,c(3,4,24:37,46,48:51)], function(x) factor(x, ordered=FALSE))
+df[,c(5:22,38,40:45,47,52:54)] <- lapply(df[,c(5:22,38,40:45,47,52:54)], function(x) factor(x, ordered=TRUE, exclude=NULL))
+df[,c(5:22,38,40:45,47,52:54)] <- lapply(df[,c(5:22,38,40:45,47,52:54)], function(x) fct_relevel(x, NA, after = 0))
+df <- df %>% select(-Initial)
 ```
 
+Visual EDA begins with a focus on the SVM modeling response `Suicide` and its relationships with the demographic and education features as well as the categorical `Abuse`.
 
-#### Summaries
+`Sex`: For this dataset, the proportion of females having attempted suicide (~0.39) is nearly double the same proportion among males (~0.23).
+
+```{r suicide_sex, fig.height=3}
+tab <- with(df, table(Sex, Suicide))
+tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
+  filter(Suicide == '1')
+
+tab %>%
+  mutate(Sex = fct_recode(Sex, Male='1', Female='2')) %>%
+  ggplot() +  
+  geom_col(aes(x=Sex, y=Freq, fill=Sex)) +
+  geom_label(aes(x=Sex, y=Freq, label = round(Freq,2))) +
+  theme(legend.position='none') +
+  labs(title = 'Proportion attempting suicide, by sex',
+       y = 'Proportion')
+```
+
+`Race`: For this dataset, approximately half of individuals indicating race/ethnicity as "Other/Missing" have attempted suicide (~0.50). That proportion compares with approximately 0.41 among "White" individuals and approximately 0.22 among "Black" individuals. Zero "Hispanic" individuals in this dataset have attempted suicide.
+
+```{r suicide_race, fig.height=3}
+tab <- with(df, table(Race, Suicide))
+tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
+  filter(Suicide == '1')
+
+tab %>%
+  mutate(Race = fct_recode(Race,
+                           White='1',
+                           Black='2',
+                           Hispanic='3',
+                           Asian='4',
+                           'Native American'='5',
+                           'Other/Missing' = '6')) %>%
+  ggplot() +  
+  geom_col(aes(x=Race, y=Freq, fill=Race)) +
+  geom_label(aes(x=Race, y=Freq, label = round(Freq,2))) +
+  theme(legend.position='none') +
+  labs(title = 'Proportion attempting suicide, by race/ethnicity',
+       y = 'Proportion')
+```
+
+`Age`: For this dataset, individuals of several specific ages (e.g., 22, 24, 36, and 48) have attempted suicide at rates of approximately 0.60 or higher. The relatively small size of the set, however, suggests that these ages may describe relatively small groups of individuals. 
+
+```{r suicide_age, fig.height=3}
+tab <- with(df, table(Age, Suicide))
+tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
+  filter(Suicide == '1')
+
+tab %>%
+  ggplot() +  
+  geom_col(aes(x=Age, y=Freq)) +
+  theme(legend.position='none') +
+  labs(title = 'Proportion attempting suicide, by age',
+       y = 'Proportion') +
+  scale_x_discrete(guide = guide_axis(angle = 90)) 
+```
+
+`Education`: For this dataset, zero individuals with more than fifteen years of formal education have attempted suicide. Level "15", with a proportion having attempted suicide of approximately 1.00, is an outlier relative to lower levels of education, which all show proportions of approximately 0.50 or below.
+
+```{r suicide_education, fig.height=3}
+tab <- with(df, table(Education, Suicide))
+tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
+  filter(Suicide == '1')
+
+tab %>%
+  ggplot() +  
+  geom_col(aes(x=Education, y=Freq)) +
+  theme(legend.position='none') +
+  labs(title = 'Proportion attempting suicide, by education level',
+       y = 'Proportion')
+```
+
+`Abuse`: For this dataset, individuals having been sexually and/or emotionally abused are particularly likely to have attempted suicide. Approximately three quarters of individuals in each of the "Emotional (E)" and "Physical & Sexual & Emotional" categories have attempted suicide. These proportions compare to roughly one in five individuals in each of the "No" and "Physical & Emotional" categories.
+
+```{r suicide_abuse, fig.height=3}
+tab <- with(df, table(Abuse, Suicide))
+tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
+  filter(Suicide == '1')
+
+tab %>%
+  mutate(Abuse = fct_recode(Abuse,
+                         No='0',
+                         'Physical (P)'='1',
+                         'Sexual (S)'='2',
+                         'Emotional (E)'='3',
+                         'P & S'='4',
+                         'P & E'='5',
+                         'S & E'='6',
+                         'P & S & E'='7')) %>%
+  ggplot() +  
+  geom_col(aes(x=Abuse, y=Freq, fill=Abuse)) +
+  geom_label(aes(x=Abuse, y=Freq, label = round(Freq,2))) +
+  theme(legend.position='none') +
+  labs(title = 'Proportion attempting suicide, by abuse category',
+       y = 'Proportion') +
+  scale_x_discrete(guide = guide_axis(angle = 45)) 
+```
 
 
 
