@@ -1,0 +1,124 @@
+---
+title: "CUNY SPS DATA 622 - Machine Learning and Big Data"
+subtitle: 'Spring 2021 - Group 3 - Homework 4'
+author: "Maryluz Cruz, Samantha Deokinanan, Amber Ferger, Tony Mei, and Charlie Rosemond"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  html_document:
+    theme: cerulean
+    highlight: pygments
+    toc: 3
+urlcolor: purple
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.align = "center")
+```
+
+### R Packages
+
+The `R` language is used to facilitate data modeling. The main `R` packages used for data wrangling, visualization, and graphics are listed below.
+
+```{r libraries, echo=TRUE}
+# Required R packages
+library(tidyverse)
+library(kableExtra)
+library(skimr)
+library(GGally)
+library(corrplot)
+library(e1071)
+library(dummies)
+library(caret)
+
+```
+
+### Overview {.tabset .tabset-fade .tabset.-pills}
+
+This analysis uses clustering, principal component analysis (PCA), and the support vector machine (SVM) algorithm to derive insights from a mental health dataset. It begins with exploratory data analysis (EDA) and preprocessing followed by clustering and PCA. It finishes with SVM modeling of demographic and mental-health-related features to predict whether a patient attempted suicide.
+
+All references and a technical appendix of all R code are available at the end of this report.
+
+***
+<center> **PROJECT SECTIONS** </center>
+***
+
+### Exploratory Data Analysis (EDA)
+
+EDA seeks to understand the data and its nuances. It draws on a combination of summary statistics and univariate and bivariate visualizations to summarize the dataset, its response, and the initial group of possible features. This information will inform preprocessing of the dataset prior to modeling.
+
+#### Dataset
+
+Sourced from an actual research project and deidentified, the dataset contains individual samples describing patients' experiences with ADHD, mood disorders, substance use and misuse, and related mental health behaviors. It consists of 175 samples and 54 columns, including an identifier `Initial` to be dropped and a response `Suicide` to be modeled via SVM. The remaining features for modeling range from demographic information (e.g., `Age`) and various questionnaire responses (e.g., `ADHD.Q1`) to used/abused substances (e.g., `THC`) and medications (e.g., `Psych.meds`). All columns in the dataset are listed and described below.
+
+*Mental Health Dataset Column Definition*
+Columns | Variable | Description
+---|---|-----
+C |  Sex | Male-1, Female-2
+D | Race | White-1, African American-2, Hispanic-3, Asian-4, Native American-5, Other or missing data -6
+E - W | ADHD self-report scale |  Never-0, rarely-1, sometimes-2, often-3, very often-4
+X - AM | Mood disorder questions |  No-0, yes-1; question 3: no problem-0, minor-1, moderate-2, serious-3
+AN - AS | Individual substances misuse |   no use-0, use-1, abuse-2, dependence-3
+AT | Court Order |   No-0, Yes-1
+AU | | Education |  1-12 grade, 13+ college
+AV | History of Violence |  No-0, Yes-1
+AW | Disorderly Conduct |  No-0, Yes-1
+AX | Suicide attempt |  No-0, Yes-1
+AY | Abuse Hx |  No-0, Physical (P)-1, Sexual (S)-2, Emotional (E)-3, P&S-4, P&E-5, S&E-6, P&S&E-7
+AZ | Non-substance-related Dx |  0 - none; 1 - one; 2 - More than one
+BA | Substance-related Dx |  0 - none; 1 - one Substance-related; 2 - two; 3 - three or more
+BB | Psychiatric Meds |  0 - none; 1 - one psychotropic med; 2 - more than one psychotropic med
+
+```{r load}
+df <- read_csv("https://raw.githubusercontent.com/greeneyefirefly/DATA622-Group3/main/Project_4/ADHD_data.csv")
+#dim(df)
+df <- df %>% rename_all(make.names) %>% select(-Initial)
+```
+
+```{r summarystats}
+skim(df)
+```
+
+```{r initproc}
+#df <- df %>% rename_all(make.names)
+#df[,c(3,4,47,51)] <- lapply(df[,c(3,4,47,51)], function(x) factor(x, ordered=FALSE, exclude=NA))
+#df[,c(5:22,24:38,40:46,48:50,52:54)] <- lapply(df[,c(5:22,24:38,40:46,48:50,52:54)], function(x) factor(x, ordered=TRUE, exclude=NA))
+```
+
+
+#### Summaries
+
+
+
+### Preprocessing
+
+#### Imputation
+
+#### Transformation
+
+
+### 1. Clustering
+
+#### Sub
+
+### 2. Principal Component Analysis (PCA)
+
+#### Sub
+
+### 3. Support Vector Machine (SVM)
+
+#### Sub
+
+
+### Works Cited
+
+
+### Code Appendix
+
+The code chunks below represent the R code called in order during the analysis. They are reproduced in the appendix for review and comment.
+
+```{r appendix, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, eval=FALSE)
+```
+
+```{r loadpeng}
+```
