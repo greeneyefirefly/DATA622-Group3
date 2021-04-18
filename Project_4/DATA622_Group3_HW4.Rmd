@@ -136,22 +136,6 @@ tab %>%
        y = 'Proportion')
 ```
 
-`Age`: For this dataset, individuals of several specific ages (e.g., 22, 24, 36, and 48) have attempted suicide at rates of approximately 0.60 or higher. The relatively small size of the set, however, suggests that these ages may describe relatively small groups of individuals. 
-
-```{r suicide_age, fig.height=3}
-tab <- with(df, table(Age, Suicide))
-tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
-  filter(Suicide == '1')
-
-tab %>%
-  ggplot() +  
-  geom_col(aes(x=Age, y=Freq)) +
-  theme(legend.position='none') +
-  labs(title = 'Proportion attempting suicide, by age',
-       y = 'Proportion') +
-  scale_x_discrete(guide = guide_axis(angle = 90)) 
-```
-
 `Education`: For this dataset, zero individuals with more than fifteen years of formal education have attempted suicide. Level "15", with a proportion having attempted suicide of approximately 1.00, is an outlier relative to lower levels of education, which all show proportions of approximately 0.50 or below.
 
 ```{r suicide_education, fig.height=3}
@@ -193,7 +177,128 @@ tab %>%
   scale_x_discrete(guide = guide_axis(angle = 45)) 
 ```
 
+The next group of features for analysis are the numerics--`Age`, `ADHD.Total`, and `MD.TOTAL`--with each one is related to `Suicide` using distribution plots and correlations. For clarity, the plots below do not account for missing values of `Suicide`, which were included in an initial run of plots but whose relationships did not appear to differ in nature from those of the other levels.
 
+```{r suicide_numerics, fig.height=5.5}
+df %>%
+  filter(!is.na(Suicide)) %>%
+  mutate(Suicide = fct_recode(Suicide,
+                     'No attempt'='0',
+                     Attempt='1')) %>%
+  ggpairs(columns = c('Suicide','Age','ADHD.Total','MD.TOTAL'), title = "Correlogram of response 'Suicide' and numeric features", 
+        ggplot2::aes(color = Suicide),
+        progress = FALSE, 
+        lower = list(continuous = wrap("smooth", alpha = 0.3, size = 0.1))) 
+```
+
+Generally, having attempted suicide (`Suicide` = "1") does not appear strongly related to any of these features in this dataset. There is a clear difference between the level distributions of `MD.TOTAL`, with the distribution for `Suicide` = "1" shifted higher than its counterpart for `Suicide` = "0". The former's median is roughly equal to the 75th percentile for the latter. Regarding collinearity, overall correlations are essentially non-existent between `Age` and each of `ADHD.Total` and `MD.TOTAL`, though the level-specific correlation values for `Suicide` = "1" are roughly twice the magnitude of those for `Suicide` = "0". The overall correlation between `ADHD.Total` and `MD.TOTAL` is approximately 0.482, suggesting the two features move in somewhat similar directions. Here again, there is a difference by level of `Suicide`: the value among individuals not having attempted suicide is approximately 0.562 compared with approximately 0.41 among individuals who have attempted it.
+
+
+```{r suicide_feature1, fig.height=5.5}
+df %>%
+  filter(!is.na(Suicide)) %>%
+  mutate(Suicide = fct_recode(Suicide,
+                     'No attempt'='0',
+                     Attempt='1'),
+         Court.order = fct_recode(Court.order,
+                                  No='0',
+                                  Yes='1'),
+         Hx.of.Violence = fct_recode(Hx.of.Violence,
+                                     No='0',
+                                     Yes='1'),
+         Disorderly.Conduct = fct_recode(Disorderly.Conduct,
+                                         No='0',
+                                         Yes='1')) %>%
+  ggpairs(columns = c('Suicide','Court.order','Hx.of.Violence','Disorderly.Conduct'), title = "Bar plots of response 'Suicide' and selected categorical features", 
+        ggplot2::aes(color = Suicide),
+        progress = FALSE,
+        lower = list(discrete = "blank")) 
+```
+
+There could be differences in proportion between levels of `Suicide` relative to `Court.order`, `Hx.of.Violence`, and `Disorderly.Conduct`. Both `Court.order` and `Hx.of.Violence` skew towards "No"--that is, no court order and no history of violence--but individuals having attempted suicide (`Suicide` = "1") appear to show "Yes" in greater proportions than their non-attempting counterparts. By contrast, most individuals in the dataset have some history of disorderly conduct (`Disorderly.Conduct` = "1"), and the proportions appear relatively similar across levels of `Suicide`.
+
+
+```{r suicide_feature2, fig.height=5.5}
+df %>%
+  filter(!is.na(Suicide)) %>%
+  mutate(Suicide = fct_recode(Suicide,
+                     'No attempt'='0',
+                     Attempt='1'),
+         Non.subst.Dx = fct_recode(Non.subst.Dx,
+                                  'NA'='NA',
+                                  None='0',
+                                  One='1',
+                                  'Two or more'='2'),
+         Subst.Dx = fct_recode(Subst.Dx,
+                               'NA'='NA',
+                               None='0',
+                               One='1',
+                               Two='2',
+                               'Three or more'='3'),
+         Psych.meds. = fct_recode(Psych.meds.,
+                                  'NA'='NA',
+                                  None='0',
+                                  One='1',
+                                  'Two or more'='2')) %>%
+  ggpairs(columns = c('Suicide','Non.subst.Dx','Subst.Dx','Psych.meds.'), title = "Bar plots of response 'Suicide' and selected categorical features", 
+        ggplot2::aes(color = Suicide),
+        progress = FALSE,
+        lower = list(discrete = "blank")) 
+```
+
+Distributions for `Non.subst.Dx`, `Subst.Dx`, and `Psych.meds.` are relatively similar regardless of level of `Suicide`. Most individuals in the dataset show zero use of non-substance-related drugs, with fewer individuals at greater levels of use. Use of a single substance-related drug (`Subst.Dx` = "1") is most prevalent in the dataset, followed by zero use and use of two. As noted previously, `Psych.meds.` is primarily missing, and in general, individuals missing values for `Non.subst.Dx` and `Subst.Dx` are missing a value for `Psych.meds.`.
+
+
+```{r suicide_feature3, fig.height=5.5}
+df %>%
+  filter(!is.na(Suicide)) %>%
+  mutate(Suicide = fct_recode(Suicide,
+                     'No attempt'='0',
+                     Attempt='1'),
+         Alcohol = fct_recode(Alcohol,
+                              'NA'='NA',
+                              'No use'='0',
+                              Use='1',
+                              Abuse='2',
+                              Dependence='3'),
+         THC = fct_recode(THC,
+                          'NA'='NA',
+                          'No use'='0',
+                          Use='1',
+                          Abuse='2',
+                          Dependence='3'),
+         Cocaine = fct_recode(Cocaine,
+                              'NA'='NA',
+                              'No use'='0',
+                              Use='1',
+                              Abuse='2',
+                              Dependence='3'),
+         Stimulants = fct_recode(Stimulants,
+                                 'NA'='NA',
+                                 'No use'='0',
+                                 Use='1',
+                                 Abuse='2',
+                                 Dependence='3'),
+         Sedative.hypnotics = fct_recode(Sedative.hypnotics,
+                                         'NA'='NA',
+                                         'No use'='0',
+                                         Use='1',
+                                         Abuse='2',
+                                         Dependence='3'),
+         Opioids = fct_recode(Opioids,
+                              'NA'='NA',
+                              'No use'='0',
+                              Use='1',
+                              Abuse='2',
+                              Dependence='3')) %>%
+  ggpairs(columns = c('Suicide','Alcohol','THC','Cocaine','Stimulants','Sedative.hypnotics','Opioids'), title = "Bar plots of response 'Suicide' and substance features", 
+        ggplot2::aes(color = Suicide),
+        progress = FALSE,
+        upper = list(discrete = "blank"),
+        lower = list(discrete = "blank")) 
+```
+
+Regarding the substance-misuse features, individuals in this dataset typically either show no use (\* = "0") or dependence (\* = "3"). Use (\* = "1") and abuse (\* = "2") are most common for `Alcohol`, `THC`, and `Cocaine`. Differences in proportions across levels of `Suicide` are most notable within the dependence group for `Alcohol`.
 
 ### Preprocessing
 
