@@ -80,12 +80,12 @@ skim(df) %>%
 
 Summary statistics reveal useful information to inform pre-processing and modeling. First, the demographic and questionnaire features are entirely complete, though missingness is present elsewhere. Notably, SVM response `Suicide` is approximately 93 percent complete, and `Psych.meds.` is only approximately 33 percent complete. Second, the feature distributions could require transformation prior to modeling. Some of the questionnaire features show clear skewness (e.g., `ADHD.Q12`) or imbalance (e.g., `MD.Q1g`), while many of the substance use/abuse features appear heavily imbalanced towards "no use". Here again, response `Suicide` is imbalanced towards "no attempt". And third, feature `ADHD.Q5` has at least one value of "5", which, per documentation, appears to be an error. This feature value is changed to missing.
 
-```{r data}
+```{r ADHDQ5fix}
 #df %>% filter(ADHD.Q5 == 5) # 1 sample
 df$ADHD.Q5[df$ADHD.Q5 == 5] <- NA
 ```
 
-Beyond the to-be-dropped `Initial`, all dataset features are loaded in numeric format, though many of them are categorical if not ordinal in nature. These features thus require conversion to [ordinal] factors. Missing values "NA" are treated as a level, and where applicable, ordered lowest.
+Beyond the to-be-dropped `Initial`, all dataset features are loaded in numeric format, though many of them are categorical if not ordinal in nature. These features thus require conversion to factors. Missing values "NA" are treated as a level, and where applicable, ordered lowest.
 
 ```{r initproc}
 df[,c(3,4,24:37,46,48:51)] <- lapply(df[,c(3,4,24:37,46,48:51)], function(x) factor(x, ordered=FALSE))
@@ -94,7 +94,22 @@ df[,c(5:22,38,40:45,47,52:54)] <- lapply(df[,c(5:22,38,40:45,47,52:54)], functio
 df <- df %>% select(-Initial)
 ```
 
-Visual EDA begins with a focus on the SVM modeling response `Suicide` and its relationships with the demographic and education features as well as the categorical `Abuse`.
+EDA continues with sets of cross-tabulations between SVM modeling response `Suicide` and the ADHD and MD questionnaire groups, respectively. `Suicide` is coded as "1" if an individual has attempted suicide and "0" if not. The ADHD features are coded on a general Likert from never ("0") through very often ("4"). The MD features are coded Yes/No ("1"/"0").
+
+```{r ADHDcrosstabs}
+lapply(subset(df, select=ADHD.Q1:ADHD.Q18), function(col) ctable(x = df$Suicide, y = col, prop = 'r'))
+```
+
+For most of the ADHD features, individuals having attempted suicide (`Suicide` = "1") skew towards the higher end of the scale (e.g., towards likely or very likely) relative to their non-attempting counterparts. Minimal information is available on the questionnaire itself, but presumably, these features describe likelihood of exhibiting or partaking in certain behaviors indicative of ADHD. Later analysis may reveal specific question features to be particularly important.
+
+
+```{r MDcrosstabs}
+lapply(subset(df, select=MD.Q1a:MD.Q3), function(col) ctable(x = df$Suicide, y = col, prop = 'r'))
+```
+
+Like the ADHD features, the MD question features display clear differences between classes of `Suicide`. Individuals having attempted suicide (`Suicide` = "1") tend towards question answers of yes ("1") in often substantially greater proportions than non-attempters. The only exception is `MD.Q1c`, where both classes of `Suicide` show yes proportions of approximately 0.55.
+
+Next comes a focus on `Suicide` and its relationships with the categorical demographic and education features as well as the categorical `Abuse`.
 
 `Sex`: For this dataset, the proportion of females having attempted suicide (~0.39) is nearly double the same proportion among males (~0.23).
 
@@ -112,6 +127,7 @@ tab %>%
   labs(title = 'Proportion attempting suicide, by sex',
        y = 'Proportion')
 ```
+
 
 `Race`: For this dataset, approximately half of individuals indicating race/ethnicity as "Other/Missing" have attempted suicide (~0.50). That proportion compares with approximately 0.41 among "White" individuals and approximately 0.22 among "Black" individuals. Zero "Hispanic" individuals in this dataset have attempted suicide.
 
@@ -136,6 +152,7 @@ tab %>%
        y = 'Proportion')
 ```
 
+
 `Education`: For this dataset, zero individuals with more than fifteen years of formal education have attempted suicide. Level "15", with a proportion having attempted suicide of approximately 1.00, is an outlier relative to lower levels of education, which all show proportions of approximately 0.50 or below.
 
 ```{r suicide_education, fig.height=3}
@@ -150,6 +167,7 @@ tab %>%
   labs(title = 'Proportion attempting suicide, by education level',
        y = 'Proportion')
 ```
+
 
 `Abuse`: For this dataset, individuals having been sexually and/or emotionally abused are particularly likely to have attempted suicide. Approximately three quarters of individuals in each of the "Emotional (E)" and "Physical & Sexual & Emotional" categories have attempted suicide. These proportions compare to roughly one in five individuals in each of the "No" and "Physical & Emotional" categories.
 
@@ -177,6 +195,7 @@ tab %>%
   scale_x_discrete(guide = guide_axis(angle = 45)) 
 ```
 
+
 The next group of features for analysis are the numerics--`Age`, `ADHD.Total`, and `MD.TOTAL`--with each one is related to `Suicide` using distribution plots and correlations. For clarity, the plots below do not account for missing values of `Suicide`, which were included in an initial run of plots but whose relationships did not appear to differ in nature from those of the other levels.
 
 ```{r suicide_numerics, fig.height=5.5}
@@ -191,7 +210,7 @@ df %>%
         lower = list(continuous = wrap("smooth", alpha = 0.3, size = 0.1))) 
 ```
 
-Generally, having attempted suicide (`Suicide` = "1") does not appear strongly related to any of these features in this dataset. There is a clear difference between the level distributions of `MD.TOTAL`, with the distribution for `Suicide` = "1" shifted higher than its counterpart for `Suicide` = "0". The former's median is roughly equal to the 75th percentile for the latter. Regarding collinearity, overall correlations are essentially non-existent between `Age` and each of `ADHD.Total` and `MD.TOTAL`, though the level-specific correlation values for `Suicide` = "1" are roughly twice the magnitude of those for `Suicide` = "0". The overall correlation between `ADHD.Total` and `MD.TOTAL` is approximately 0.482, suggesting the two features move in somewhat similar directions. Here again, there is a difference by level of `Suicide`: the value among individuals not having attempted suicide is approximately 0.562 compared with approximately 0.41 among individuals who have attempted it.
+Having attempted suicide (`Suicide` = "1") may be related to these numeric features in this dataset. There is a clear difference between the class distributions of `MD.TOTAL`, with the distribution for `Suicide` = "1" shifted higher than its counterpart for `Suicide` = "0". The former's median is roughly equal to the 75th percentile for the latter. Regarding collinearity, overall correlations are essentially non-existent between `Age` and each of `ADHD.Total` and `MD.TOTAL`, though the class-specific correlation values for `Suicide` = "1" are roughly twice the magnitude of those for `Suicide` = "0". The overall correlation between `ADHD.Total` and `MD.TOTAL` is approximately 0.482, suggesting the two features move in somewhat similar directions. Here again, there is a difference by class of `Suicide`: the value among individuals not having attempted suicide is approximately 0.562 compared with approximately 0.41 among individuals who have attempted it.
 
 
 ```{r suicide_feature1, fig.height=5.5}
@@ -215,7 +234,7 @@ df %>%
         lower = list(discrete = "blank")) 
 ```
 
-There could be differences in proportion between levels of `Suicide` relative to `Court.order`, `Hx.of.Violence`, and `Disorderly.Conduct`. Both `Court.order` and `Hx.of.Violence` skew towards "No"--that is, no court order and no history of violence--but individuals having attempted suicide (`Suicide` = "1") appear to show "Yes" in greater proportions than their non-attempting counterparts. By contrast, most individuals in the dataset have some history of disorderly conduct (`Disorderly.Conduct` = "1"), and the proportions appear relatively similar across levels of `Suicide`.
+There could be differences in proportion between levels of `Suicide` relative to `Court.order`, `Hx.of.Violence`, and `Disorderly.Conduct`. Both `Court.order` and `Hx.of.Violence` skew towards "No"--that is, no court order and no history of violence--but individuals having attempted suicide (`Suicide` = "1") appear to show "Yes" in greater proportions than their non-attempting counterparts. By contrast, most individuals in the dataset have some history of disorderly conduct (`Disorderly.Conduct` = "1"), and the proportions appear relatively similar between classes of `Suicide`.
 
 
 ```{r suicide_feature2, fig.height=5.5}
@@ -246,7 +265,7 @@ df %>%
         lower = list(discrete = "blank")) 
 ```
 
-Distributions for `Non.subst.Dx`, `Subst.Dx`, and `Psych.meds.` are relatively similar regardless of level of `Suicide`. Most individuals in the dataset show zero use of non-substance-related drugs, with fewer individuals at greater levels of use. Use of a single substance-related drug (`Subst.Dx` = "1") is most prevalent in the dataset, followed by zero use and use of two. As noted previously, `Psych.meds.` is primarily missing, and in general, individuals missing values for `Non.subst.Dx` and `Subst.Dx` are missing a value for `Psych.meds.`.
+Distributions for `Non.subst.Dx`, `Subst.Dx`, and `Psych.meds.` are relatively similar regardless of class of `Suicide`. Most individuals in the dataset show zero use of non-substance-related drugs, with fewer individuals at greater levels of use. Use of a single substance-related drug (`Subst.Dx` = "1") is most prevalent in the dataset, followed by zero use and use of two. As noted previously, `Psych.meds.` is primarily missing, and in general, individuals missing values for `Non.subst.Dx` and `Subst.Dx` are missing a value for `Psych.meds.`.
 
 
 ```{r suicide_feature3, fig.height=5.5}
@@ -298,7 +317,7 @@ df %>%
         lower = list(discrete = "blank")) 
 ```
 
-Regarding the substance-misuse features, individuals in this dataset typically either show no use (\* = "0") or dependence (\* = "3"). Use (\* = "1") and abuse (\* = "2") are most common for `Alcohol`, `THC`, and `Cocaine`. Differences in proportions across levels of `Suicide` are most notable within the dependence group for `Alcohol`.
+Regarding the substance-misuse features, individuals in this dataset typically either show no use (\* = "0") or dependence (\* = "3"). Use (\* = "1") and abuse (\* = "2") are most common for `Alcohol`, `THC`, and `Cocaine`. Differences in proportions between classes of `Suicide` are most notable within the dependence group for `Alcohol`.
 
 ### Preprocessing
 
