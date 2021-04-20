@@ -7,7 +7,7 @@ output:
   html_document:
     theme: cerulean
     highlight: pygments
-    toc: 3
+    toc: 2
 urlcolor: purple
 ---
 
@@ -24,17 +24,18 @@ The `R` language is used to facilitate data modeling. The main `R` packages used
 library(tidyverse)
 library(kableExtra)
 library(skimr)
+library(summarytools)
 library(GGally)
 library(corrplot)
 library(e1071)
 library(dummies)
 library(caret)
-
+library(psych)
 ```
 
 ### Overview {.tabset .tabset-fade .tabset.-pills}
 
-This analysis uses clustering, principal component analysis (PCA), and the support vector machine (SVM) algorithm to derive insights from a mental health dataset. It begins with exploratory data analysis (EDA) and preprocessing followed by clustering and PCA. It finishes with SVM modeling of demographic and mental-health-related features to predict whether a patient attempted suicide.
+This analysis uses clustering, principal component analysis (PCA), and the support vector machine (SVM) algorithm to derive insights from a mental health dataset. It begins with exploratory data analysis (EDA) and pre-processing followed by clustering and PCA. It finishes with SVM modeling of demographic and mental-health-related features to predict whether a patient attempted suicide.
 
 All references and a technical appendix of all R code are available at the end of this report.
 
@@ -44,9 +45,9 @@ All references and a technical appendix of all R code are available at the end o
 
 ### Exploratory Data Analysis (EDA)
 
-EDA seeks to understand the data and its nuances. It draws on a combination of summary statistics and univariate and bivariate visualizations to summarize the dataset, its response, and the initial group of possible features. This information will inform preprocessing of the dataset prior to modeling.
+EDA seeks to understand the data and its nuances. It draws on a combination of summary statistics, and univariate and bivariate visualizations to summarize the dataset, its response, and the initial group of possible features. This information will inform preprocessing of the dataset prior to modeling.
 
-#### Dataset
+#### Understanding the Data
 
 Sourced from an actual research project and deidentified, the dataset contains individual samples describing patients' experiences with ADHD, mood disorders, substance use and misuse, and related mental health behaviors. It consists of 175 samples and 54 columns, including an identifier `Initial` to be dropped and a response `Suicide` to be modeled via SVM. The remaining features for modeling range from demographic information (e.g., `Age`) and various questionnaire responses (e.g., `ADHD.Q1`) to used/abused substances (e.g., `THC`) and medications (e.g., `Psych.meds`). All columns in the dataset are listed and described below.
 
@@ -81,7 +82,6 @@ skim(df) %>%
 Summary statistics reveal useful information to inform pre-processing and modeling. First, the demographic and questionnaire features are entirely complete, though missingness is present elsewhere. Notably, SVM response `Suicide` is approximately 93 percent complete, and `Psych.meds.` is only approximately 33 percent complete. Second, the feature distributions could require transformation prior to modeling. Some of the questionnaire features show clear skewness (e.g., `ADHD.Q12`) or imbalance (e.g., `MD.Q1g`), while many of the substance use/abuse features appear heavily imbalanced towards "no use". Here again, response `Suicide` is imbalanced towards "no attempt". And third, feature `ADHD.Q5` has at least one value of "5", which, per documentation, appears to be an error. This feature value is changed to missing.
 
 ```{r ADHDQ5fix}
-#df %>% filter(ADHD.Q5 == 5) # 1 sample
 df$ADHD.Q5[df$ADHD.Q5 == 5] <- NA
 ```
 
@@ -102,18 +102,19 @@ lapply(subset(df, select=ADHD.Q1:ADHD.Q18), function(col) ctable(x = df$Suicide,
 
 For most of the ADHD features, individuals having attempted suicide (`Suicide` = "1") skew towards the higher end of the scale (e.g., towards likely or very likely) relative to their non-attempting counterparts. Minimal information is available on the questionnaire itself, but presumably, these features describe likelihood of exhibiting or partaking in certain behaviors indicative of ADHD. Later analysis may reveal specific question features to be particularly important.
 
-
 ```{r MDcrosstabs}
 lapply(subset(df, select=MD.Q1a:MD.Q3), function(col) ctable(x = df$Suicide, y = col, prop = 'r'))
 ```
 
 Like the ADHD features, the MD question features display clear differences between classes of `Suicide`. Individuals having attempted suicide (`Suicide` = "1") tend towards question answers of yes ("1") in often substantially greater proportions than non-attempters. The only exception is `MD.Q1c`, where both classes of `Suicide` show yes proportions of approximately 0.55.
 
+#### Categorical Features
+
 Next comes a focus on `Suicide` and its relationships with the categorical demographic and education features as well as the categorical `Abuse`.
 
-`Sex`: For this dataset, the proportion of females having attempted suicide (~0.39) is nearly double the same proportion among males (~0.23).
+`Sex`: For this dataset, the proportion of females having attempted suicide (38.9%) is nearly double the same proportion among males (23.3%).
 
-```{r suicide_sex, fig.height=3}
+```{r suicide_sex, fig.height=3.5}
 tab <- with(df, table(Sex, Suicide))
 tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
   filter(Suicide == '1')
@@ -122,16 +123,16 @@ tab %>%
   mutate(Sex = fct_recode(Sex, Male='1', Female='2')) %>%
   ggplot() +  
   geom_col(aes(x=Sex, y=Freq, fill=Sex)) +
-  geom_label(aes(x=Sex, y=Freq, label = round(Freq,2))) +
+  geom_label(aes(x=Sex, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme(legend.position='none') +
   labs(title = 'Proportion attempting suicide, by sex',
        y = 'Proportion')
 ```
 
+`Race`: For this dataset, approximately half of individuals indicating race/ethnicity as "Other/Missing" have attempted suicide (~50.0%). That proportion compares with approximately 41.2% among "White" individuals and approximately 22.0% among "Black" individuals. Zero "Hispanic" individuals in this dataset have attempted suicide.
 
-`Race`: For this dataset, approximately half of individuals indicating race/ethnicity as "Other/Missing" have attempted suicide (~0.50). That proportion compares with approximately 0.41 among "White" individuals and approximately 0.22 among "Black" individuals. Zero "Hispanic" individuals in this dataset have attempted suicide.
-
-```{r suicide_race, fig.height=3}
+```{r suicide_race, fig.height=3.5}
 tab <- with(df, table(Race, Suicide))
 tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
   filter(Suicide == '1')
@@ -146,14 +147,14 @@ tab %>%
                            'Other/Missing' = '6')) %>%
   ggplot() +  
   geom_col(aes(x=Race, y=Freq, fill=Race)) +
-  geom_label(aes(x=Race, y=Freq, label = round(Freq,2))) +
+  geom_label(aes(x=Race, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme(legend.position='none') +
   labs(title = 'Proportion attempting suicide, by race/ethnicity',
        y = 'Proportion')
 ```
 
-
-`Education`: For this dataset, zero individuals with more than fifteen years of formal education have attempted suicide. Level "15", with a proportion having attempted suicide of approximately 1.00, is an outlier relative to lower levels of education, which all show proportions of approximately 0.50 or below.
+`Education`: For this dataset, zero individuals with more than fifteen years of formal education have attempted suicide. Level "15", with a proportion having attempted suicide of approximately 100%, is an outlier relative to lower levels of education, which all show proportions of approximately 50% or below.
 
 ```{r suicide_education, fig.height=3}
 tab <- with(df, table(Education, Suicide))
@@ -163,15 +164,15 @@ tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
 tab %>%
   ggplot() +  
   geom_col(aes(x=Education, y=Freq)) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme(legend.position='none') +
   labs(title = 'Proportion attempting suicide, by education level',
        y = 'Proportion')
 ```
 
+`Abuse`: For this dataset, individuals having been sexually and/or emotionally abused are particularly likely to have attempted suicide. Approximately 75% of individuals in each of the "Emotional (E)" and "Physical & Sexual & Emotional" categories have attempted suicide. These proportions compare to roughly one in five individuals in each of the "No" and "Physical & Emotional" categories.
 
-`Abuse`: For this dataset, individuals having been sexually and/or emotionally abused are particularly likely to have attempted suicide. Approximately three quarters of individuals in each of the "Emotional (E)" and "Physical & Sexual & Emotional" categories have attempted suicide. These proportions compare to roughly one in five individuals in each of the "No" and "Physical & Emotional" categories.
-
-```{r suicide_abuse, fig.height=3}
+```{r suicide_abuse, fig.height=3.7}
 tab <- with(df, table(Abuse, Suicide))
 tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
   filter(Suicide == '1')
@@ -188,13 +189,15 @@ tab %>%
                          'P & S & E'='7')) %>%
   ggplot() +  
   geom_col(aes(x=Abuse, y=Freq, fill=Abuse)) +
-  geom_label(aes(x=Abuse, y=Freq, label = round(Freq,2))) +
+  geom_label(aes(x=Abuse, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme(legend.position='none') +
   labs(title = 'Proportion attempting suicide, by abuse category',
        y = 'Proportion') +
   scale_x_discrete(guide = guide_axis(angle = 45)) 
 ```
 
+#### Feature Correlation
 
 The next group of features for analysis are the numerics--`Age`, `ADHD.Total`, and `MD.TOTAL`--with each one is related to `Suicide` using distribution plots and correlations. For clarity, the plots below do not account for missing values of `Suicide`, which were included in an initial run of plots but whose relationships did not appear to differ in nature from those of the other levels.
 
@@ -202,144 +205,266 @@ The next group of features for analysis are the numerics--`Age`, `ADHD.Total`, a
 df %>%
   filter(!is.na(Suicide)) %>%
   mutate(Suicide = fct_recode(Suicide,
-                     'No attempt'='0',
-                     Attempt='1')) %>%
-  ggpairs(columns = c('Suicide','Age','ADHD.Total','MD.TOTAL'), title = "Correlogram of response 'Suicide' and numeric features", 
-        ggplot2::aes(color = Suicide),
-        progress = FALSE, 
-        lower = list(continuous = wrap("smooth", alpha = 0.3, size = 0.1))) 
+                              'No attempt' = '0',
+                              Attempt = '1')) %>%
+  ggpairs(
+    columns = c('Suicide', 'Age', 'ADHD.Total', 'MD.TOTAL'),
+    title = "Correlogram of response 'Suicide' and numeric features",
+    ggplot2::aes(color = Suicide),
+    progress = FALSE,
+    lower = list(continuous = wrap(
+      "smooth", alpha = 0.3, size = 0.1
+    ))
+  ) 
 ```
 
 Having attempted suicide (`Suicide` = "1") may be related to these numeric features in this dataset. There is a clear difference between the class distributions of `MD.TOTAL`, with the distribution for `Suicide` = "1" shifted higher than its counterpart for `Suicide` = "0". The former's median is roughly equal to the 75th percentile for the latter. Regarding collinearity, overall correlations are essentially non-existent between `Age` and each of `ADHD.Total` and `MD.TOTAL`, though the class-specific correlation values for `Suicide` = "1" are roughly twice the magnitude of those for `Suicide` = "0". The overall correlation between `ADHD.Total` and `MD.TOTAL` is approximately 0.482, suggesting the two features move in somewhat similar directions. Here again, there is a difference by class of `Suicide`: the value among individuals not having attempted suicide is approximately 0.562 compared with approximately 0.41 among individuals who have attempted it.
 
-
 ```{r suicide_feature1, fig.height=5.5}
 df %>%
   filter(!is.na(Suicide)) %>%
-  mutate(Suicide = fct_recode(Suicide,
-                     'No attempt'='0',
-                     Attempt='1'),
-         Court.order = fct_recode(Court.order,
-                                  No='0',
-                                  Yes='1'),
-         Hx.of.Violence = fct_recode(Hx.of.Violence,
-                                     No='0',
-                                     Yes='1'),
-         Disorderly.Conduct = fct_recode(Disorderly.Conduct,
-                                         No='0',
-                                         Yes='1')) %>%
-  ggpairs(columns = c('Suicide','Court.order','Hx.of.Violence','Disorderly.Conduct'), title = "Bar plots of response 'Suicide' and selected categorical features", 
-        ggplot2::aes(color = Suicide),
-        progress = FALSE,
-        lower = list(discrete = "blank")) 
+  mutate(
+    Suicide = fct_recode(Suicide,
+                         'No attempt' = '0',
+                         Attempt = '1'),
+    Court.order = fct_recode(Court.order,
+                             No = '0',
+                             Yes = '1'),
+    Hx.of.Violence = fct_recode(Hx.of.Violence,
+                                No = '0',
+                                Yes = '1'),
+    Disorderly.Conduct = fct_recode(Disorderly.Conduct,
+                                    No = '0',
+                                    Yes = '1')
+  ) %>%
+  ggpairs(
+    columns = c(
+      'Suicide',
+      'Court.order',
+      'Hx.of.Violence',
+      'Disorderly.Conduct'
+    ),
+    title = "Bar plots of response 'Suicide' and selected categorical features",
+    ggplot2::aes(color = Suicide),
+    progress = FALSE,
+    lower = list(discrete = "blank")
+  ) 
 ```
 
 There could be differences in proportion between levels of `Suicide` relative to `Court.order`, `Hx.of.Violence`, and `Disorderly.Conduct`. Both `Court.order` and `Hx.of.Violence` skew towards "No"--that is, no court order and no history of violence--but individuals having attempted suicide (`Suicide` = "1") appear to show "Yes" in greater proportions than their non-attempting counterparts. By contrast, most individuals in the dataset have some history of disorderly conduct (`Disorderly.Conduct` = "1"), and the proportions appear relatively similar between classes of `Suicide`.
 
-
 ```{r suicide_feature2, fig.height=5.5}
 df %>%
   filter(!is.na(Suicide)) %>%
-  mutate(Suicide = fct_recode(Suicide,
-                     'No attempt'='0',
-                     Attempt='1'),
-         Non.subst.Dx = fct_recode(Non.subst.Dx,
-                                  'NA'='NA',
-                                  None='0',
-                                  One='1',
-                                  'Two or more'='2'),
-         Subst.Dx = fct_recode(Subst.Dx,
-                               'NA'='NA',
-                               None='0',
-                               One='1',
-                               Two='2',
-                               'Three or more'='3'),
-         Psych.meds. = fct_recode(Psych.meds.,
-                                  'NA'='NA',
-                                  None='0',
-                                  One='1',
-                                  'Two or more'='2')) %>%
-  ggpairs(columns = c('Suicide','Non.subst.Dx','Subst.Dx','Psych.meds.'), title = "Bar plots of response 'Suicide' and selected categorical features", 
-        ggplot2::aes(color = Suicide),
-        progress = FALSE,
-        lower = list(discrete = "blank")) 
+  mutate(
+    Suicide = fct_recode(Suicide,
+                         'No attempt' = '0',
+                         Attempt = '1'),
+    Non.subst.Dx = fct_recode(
+      Non.subst.Dx,
+      'NA' = 'NA',
+      None = '0',
+      One = '1',
+      'Two or more' = '2'
+    ),
+    Subst.Dx = fct_recode(
+      Subst.Dx,
+      'NA' = 'NA',
+      None = '0',
+      One = '1',
+      Two = '2',
+      'Three or more' = '3'
+    ),
+    Psych.meds. = fct_recode(
+      Psych.meds.,
+      'NA' = 'NA',
+      None = '0',
+      One = '1',
+      'Two or more' = '2'
+    )
+  ) %>%
+  ggpairs(
+    columns = c('Suicide', 'Non.subst.Dx', 'Subst.Dx', 'Psych.meds.'),
+    title = "Bar plots of response 'Suicide' and selected categorical features",
+    ggplot2::aes(color = Suicide),
+    progress = FALSE,
+    lower = list(discrete = "blank")
+  ) 
 ```
 
 Distributions for `Non.subst.Dx`, `Subst.Dx`, and `Psych.meds.` are relatively similar regardless of class of `Suicide`. Most individuals in the dataset show zero use of non-substance-related drugs, with fewer individuals at greater levels of use. Use of a single substance-related drug (`Subst.Dx` = "1") is most prevalent in the dataset, followed by zero use and use of two. As noted previously, `Psych.meds.` is primarily missing, and in general, individuals missing values for `Non.subst.Dx` and `Subst.Dx` are missing a value for `Psych.meds.`.
 
-
 ```{r suicide_feature3, fig.height=5.5}
 df %>%
   filter(!is.na(Suicide)) %>%
-  mutate(Suicide = fct_recode(Suicide,
-                     'No attempt'='0',
-                     Attempt='1'),
-         Alcohol = fct_recode(Alcohol,
-                              'NA'='NA',
-                              'No use'='0',
-                              Use='1',
-                              Abuse='2',
-                              Dependence='3'),
-         THC = fct_recode(THC,
-                          'NA'='NA',
-                          'No use'='0',
-                          Use='1',
-                          Abuse='2',
-                          Dependence='3'),
-         Cocaine = fct_recode(Cocaine,
-                              'NA'='NA',
-                              'No use'='0',
-                              Use='1',
-                              Abuse='2',
-                              Dependence='3'),
-         Stimulants = fct_recode(Stimulants,
-                                 'NA'='NA',
-                                 'No use'='0',
-                                 Use='1',
-                                 Abuse='2',
-                                 Dependence='3'),
-         Sedative.hypnotics = fct_recode(Sedative.hypnotics,
-                                         'NA'='NA',
-                                         'No use'='0',
-                                         Use='1',
-                                         Abuse='2',
-                                         Dependence='3'),
-         Opioids = fct_recode(Opioids,
-                              'NA'='NA',
-                              'No use'='0',
-                              Use='1',
-                              Abuse='2',
-                              Dependence='3')) %>%
-  ggpairs(columns = c('Suicide','Alcohol','THC','Cocaine','Stimulants','Sedative.hypnotics','Opioids'), title = "Bar plots of response 'Suicide' and substance features", 
-        ggplot2::aes(color = Suicide),
-        progress = FALSE,
-        upper = list(discrete = "blank"),
-        lower = list(discrete = "blank")) 
+  mutate(
+    Suicide = fct_recode(Suicide,
+                         'No attempt' = '0',
+                         Attempt = '1'),
+    Alcohol = fct_recode(
+      Alcohol,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    ),
+    THC = fct_recode(
+      THC,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    ),
+    Cocaine = fct_recode(
+      Cocaine,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    ),
+    Stimulants = fct_recode(
+      Stimulants,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    ),
+    Sedative.hypnotics = fct_recode(
+      Sedative.hypnotics,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    ),
+    Opioids = fct_recode(
+      Opioids,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    )
+  ) %>%
+  ggpairs(
+    columns = c(
+      'Suicide',
+      'Alcohol',
+      'THC',
+      'Cocaine',
+      'Stimulants',
+      'Sedative.hypnotics',
+      'Opioids'
+    ),
+    title = "Bar plots of response 'Suicide' and substance features",
+    ggplot2::aes(color = Suicide),
+    progress = FALSE,
+    upper = list(discrete = "blank"),
+    lower = list(discrete = "blank")
+  ) 
 ```
 
 Regarding the substance-misuse features, individuals in this dataset typically either show no use (\* = "0") or dependence (\* = "3"). Use (\* = "1") and abuse (\* = "2") are most common for `Alcohol`, `THC`, and `Cocaine`. Differences in proportions between classes of `Suicide` are most notable within the dependence group for `Alcohol`.
 
-### Preprocessing
+### Reliability of Questions
 
-#### Imputation
+Likert-type scales are generally used as an attempt to quantify a description that is not directly measurable of an individual's environment and behavior. Several items in a questionnaire try to assess this condition, and so the answers should possess some level of internal consistency, e.g. if a survey on alcoholism is given to a random individual and that individual answers never to alcohol usage, they would certainly have to answer none to a question on number of alcoholic drink consumed, any other response would lead to an unreliable score. Thus, the overall scale and consistency reliability estimates provide better insights about the data, whereas single question reliabilities are generally very low.
 
-#### Transformation
+Cronbach’s alpha is a test reliability technique that requires only a single test administration to provide a unique estimate of the reliability for a given questionnaire (Gravetter, *et al*, 2013). Cronbach’s alpha is the average value of the reliability coefficients one would obtained for all possible combinations of items when split into two half-tests:
 
+\[\alpha = \frac{N*\bar c}{\bar v + (N-1)\bar c}\],
 
-### 1. Clustering
+where $N$ is the number of items, $\bar c$ is the average inter-item covariance among items, $\bar v$ is the average variance. This give a value from 0 to 1, and if Cronbach’s alpha $\le 0.7$, the questions are not internally consistent and do not capture the same concept the are supposed too. 
+
+This measure is the most frequently used measures of reliability, however it assumes that scale items are repeated measurements, and for this analysis this assumption is kept. Moreover, Guttman’s Lambda 6 (G6) is another measure that evaluates the reliability of individual items. This means that it provides information about how well individual questions reflect the concept being measured.
+
+The reliablity analysis for the ADHD questions highlights that the Cronbach’s alpha is 0.94 with a 95% confidence boundaries (0.93, 0.96). Discarding any item would not result in an increase in the reliablity, suggesting that all the items should be kept. By looking at the individual items, G6 is also $\ge 0.7$ suggesting that the question does provide insights on the concept being assessed to an acceptable level. There individual correlations are also positive and high.
+
+```{r Cronbach.ADHD}
+# calculate cronbach's alpha - ADHD
+temp = as.data.frame(sapply(df[,c(4:21)], factor))
+Cronbach.ADHD <- psych::alpha(sapply(temp,as.numeric), check.keys=F)
+as.data.frame(cbind(Items = names(temp),
+                    alpha = round(Cronbach.ADHD[["alpha.drop"]][["raw_alpha"]],3),
+                    G6 = round(Cronbach.ADHD[["alpha.drop"]][["G6(smc)"]],3),
+                    cor = round(Cronbach.ADHD[["item.stats"]][["r.cor"]],3))) 
+```
+
+As for the reliability analysis for the MD questions, the Cronbach’s alpha is 0.86 with a 95% confidence boundaries (0.83, 0.89). In this case, although it is relatively high, the results suggest that removing `MD.Q1c` and `MD.Q1k`, or `MD.Q3` only, an alpha of 0.88 can be achieved. By looking at the individual items, G6 is also $\ge 0.7$ suggesting that the question does provide insights on the concept being assessed to an acceptable level. Lastly, the individual correlations are moderate, noticeable for those that can improve the reliability.
+
+```{r Cronbach.MD}
+# calculate cronbach's alpha - MD
+temp = as.data.frame(sapply(df[,c(23:37)], factor))
+Cronbach.MD <- psych::alpha(sapply(temp,as.numeric), check.keys=F)
+as.data.frame(cbind(Items = names(temp),
+                    alpha = round(Cronbach.MD[["alpha.drop"]][["raw_alpha"]],3),
+                    G6 = round(Cronbach.MD[["alpha.drop"]][["G6(smc)"]],3),
+                    cor = round(Cronbach.MD[["item.stats"]][["r.cor"]],3))) 
+```
+
+### Factor Analysis
+
+Typically in behavioral science studies where a test component is a questionnaire, individual items may represent a common, underlying factor. To analysis this, factor analysis is a method that allows to find commonalities in data. This method is particularly useful when dealing with many variables. Unlike the Principal Component Analysis, which is a linear combination of variables, factor analysis is a measurement model of a hidden latent variables that affect several variables at once.
+
+The reliability test has already highlighted that the ADHD questions are strongly correlated, therefore, an oblique rotation, namely promax rotation is used search for a clearer association between individual factors and the various variables. The test of the hypothesis suggests that 3 factors are sufficient, and the chi square statistic is 198.44 on 102 degrees of freedom, p-value $\le 0.05$. Moreover, the factor loading are sufficiently, and from the plot of the results, the ADHD questions can be grouped together into 3 sets which reflect the same underlying factor. These items can be summed into a new factor item to help reduce the dimensions of the data set.
+
+```{r fa.ADHD}
+# Omitting NAs
+temp = na.omit(as.data.frame(sapply(df[,c(4:21)], factor)))
+# Run factor analysis
+factoranalysis <- factanal(sapply(temp,as.numeric), 3, rotation="promax")
+print(factoranalysis, digits=2, cutoff=.2, sort=TRUE)
+```
+
+```{r fa.ADHD.plot1}
+load <- factoranalysis$loadings[,1:2]
+plot(load, type="n", xlim = c(-1.5, 1.5)) 
+text(load, labels=names(temp), cex=.7)  
+```
+```{r fa.ADHD.plot2, fig.height=6}
+loads <- factoranalysis$loadings
+fa.diagram(loads)
+```
+
+Looking at the MD questions, the data labeling suggest that these are 3 questions, with question 1 having multiple follow-up questions. The reliability test highlighted that they are moderately correlated, so the promax rotation is used. As expected, the test of the hypothesis suggests that 3 factors are sufficient, and the chi square statistic is 88.82 on 63 degrees of freedom, p-value $\le 0.05$.For most, the factor loading are sufficiently, and from the plot of the results, the MD questions can be grouped together into 3 sets which reflect the same underlying factor. It should be noted that `MD.Q1L` and `MD.Q1m` were not correlated strongly with the other questions that aim to extract a specific information about the respondents. In such cases, it may be necessary to remove these questions from the survey. 
+
+```{r fa.MD}
+# Omitting NAs
+temp = na.omit(as.data.frame(sapply(df[,c(23:37)], factor)))
+# Run factor analysis
+factoranalysis <- factanal(sapply(temp,as.numeric), 3, rotation="promax")
+print(factoranalysis, digits=2, cutoff=.2, sort=TRUE)
+```
+
+```{r fa.MD.plot1}
+load <- factoranalysis$loadings[,1:2]
+plot(load, type="n", xlim = c(-1.5, 1.5)) 
+text(load, labels=names(temp), cex=.7)  
+```
+```{r fa.MD.plot2, fig.height=6}
+loads <- factoranalysis$loadings
+fa.diagram(loads)
+```
+
+### Clustering of Patients
 
 #### Sub
 
-### 2. Principal Component Analysis (PCA)
+### Principal Component Analysis (PCA)
 
 #### Sub
 
-### 3. Support Vector Machine (SVM)
+### Suicide Predictions using Support Vector Machine (SVM)
 
 #### Sub
-
 
 ### Works Cited
+
+* Gravetter, Frederick J, and Larry B. Wallnau. Statistics for the Behavioral Sciences. , 2013. Print.
 
 
 ### Code Appendix
