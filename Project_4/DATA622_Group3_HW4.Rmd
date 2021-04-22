@@ -31,6 +31,9 @@ library(e1071)
 library(dummies)
 library(caret)
 library(psych)
+library(VIM)
+library(mice)
+library(sjmisc)
 ```
 
 ### Overview {.tabset .tabset-fade .tabset.-pills}
@@ -79,18 +82,13 @@ skim(df) %>%
   dplyr::select(-n_missing, -numeric.sd, -numeric.p25, -numeric.p75)
 ```
 
-Summary statistics reveal useful information to inform pre-processing and modeling. First, the demographic and questionnaire features are entirely complete, though missingness is present elsewhere. Notably, SVM response `Suicide` is approximately 93 percent complete, and `Psych.meds.` is only approximately 33 percent complete. Second, the feature distributions could require transformation prior to modeling. Some of the questionnaire features show clear skewness (e.g., `ADHD.Q12`) or imbalance (e.g., `MD.Q1g`), while many of the substance use/abuse features appear heavily imbalanced towards "no use". Here again, response `Suicide` is imbalanced towards "no attempt". And third, feature `ADHD.Q5` has at least one value of "5", which, per documentation, appears to be an error. This feature value is changed to missing.
+Summary statistics reveal useful information to inform pre-processing and modeling. First, the demographic and questionnaire features are entirely complete, though missingness is present elsewhere. Notably, SVM response `Suicide` is approximately 93 percent complete, and `Psych.meds.` is only approximately 33 percent complete. Second, the feature distributions could require transformation prior to modeling. Some of the questionnaire features show clear skewness (e.g., `ADHD.Q12`) or imbalance (e.g., `MD.Q1g`), while many of the substance use/abuse features appear heavily imbalanced towards "no use". Here again, response `Suicide` is imbalanced towards "no attempt". And third, there are many features, meaning the data set is ripe for the unsupervised methods to follow.
 
-```{r ADHDQ5fix}
-df$ADHD.Q5[df$ADHD.Q5 == 5] <- NA
-```
-
-Beyond the to-be-dropped `Initial`, all dataset features are loaded in numeric format, though many of them are categorical if not ordinal in nature. These features thus require conversion to factors. Missing values "NA" are treated as a level, and where applicable, ordered lowest.
+Beyond the to-be-dropped `Initial`, all dataset features are loaded in numeric format, though many of them are categorical if not ordinal in nature. These features thus require conversion to factors.
 
 ```{r initproc}
 df[,c(3,4,24:37,46,48:51)] <- lapply(df[,c(3,4,24:37,46,48:51)], function(x) factor(x, ordered=FALSE))
-df[,c(5:22,38,40:45,47,52:54)] <- lapply(df[,c(5:22,38,40:45,47,52:54)], function(x) factor(x, ordered=TRUE, exclude=NULL))
-df[,c(5:22,38,40:45,47,52:54)] <- lapply(df[,c(5:22,38,40:45,47,52:54)], function(x) fct_relevel(x, NA, after = 0))
+df[,c(5:22,38,40:45,47,52:54)] <- lapply(df[,c(5:22,38,40:45,47,52:54)], function(x) factor(x, ordered=TRUE))
 df <- df %>% select(-Initial)
 ```
 
@@ -408,25 +406,25 @@ as.data.frame(cbind(Items = names(temp),
 
 ### Factor Analysis
 
-Typically in behavioral science studies where a test component is a questionnaire, individual items may represent a common, underlying factor. To analysis this, factor analysis is a method that allows to find commonalities in data. This method is particularly useful when dealing with many variables. Unlike the Principal Component Analysis, which is a linear combination of variables, factor analysis is a measurement model of a hidden latent variables that affect several variables at once.
+Typically in behavioral science studies where a test component is a questionnaire, individual items may represent a common, underlying factor. To analysis this, factor analysis is a method that allows to find commonalities in data. This method is particularly useful when dealing with many variables. Unlike PCA, which is a linear combination of variables, factor analysis is a measurement model of a hidden latent variables that affect several variables at once.
 
-The reliability test has already highlighted that the ADHD questions are strongly correlated, therefore, an oblique rotation, namely promax rotation is used search for a clearer association between individual factors and the various variables. The test of the hypothesis suggests that 3 factors are sufficient, and the chi square statistic is 198.44 on 102 degrees of freedom, p-value $\le 0.05$. Moreover, the factor loading are sufficiently, and from the plot of the results, the ADHD questions can be grouped together into 3 sets which reflect the same underlying factor. These items can be summed into a new factor item to help reduce the dimensions of the data set.
+The reliability test has already highlighted that the ADHD questions are strongly correlated, therefore, an oblique rotation, namely promax rotation is used search for a clearer association between individual factors and the various variables. The test of the hypothesis suggests that 3 factors are sufficient, and the chi square statistic is 197.3 on 102 degrees of freedom, p-value $\le 0.05$. Moreover, the factor loading are sufficiently, and from the plot of the results, the ADHD questions can be grouped together into 3 sets which reflect the same underlying factor. These items can be summed into a new factor item to help reduce the dimensions of the data set.
 
 ```{r fa.ADHD}
 # Omitting NAs
 temp = na.omit(as.data.frame(sapply(df[,c(4:21)], factor)))
 # Run factor analysis
-factoranalysis <- factanal(sapply(temp,as.numeric), 3, rotation="promax")
-print(factoranalysis, digits=2, cutoff=.2, sort=TRUE)
+factoranalysis1 <- factanal(sapply(temp,as.numeric), 3, rotation="promax", scores = "regression")
+print(factoranalysis1, digits=2, cutoff=.2, sort=TRUE)
 ```
 
 ```{r fa.ADHD.plot1}
-load <- factoranalysis$loadings[,1:2]
+load <- factoranalysis1$loadings[,1:2]
 plot(load, type="n", xlim = c(-1.5, 1.5)) 
 text(load, labels=names(temp), cex=.7)  
 ```
 ```{r fa.ADHD.plot2, fig.height=6}
-loads <- factoranalysis$loadings
+loads <- factoranalysis1$loadings
 fa.diagram(loads)
 ```
 
@@ -436,18 +434,75 @@ Looking at the MD questions, the data labeling suggest that these are 3 question
 # Omitting NAs
 temp = na.omit(as.data.frame(sapply(df[,c(23:37)], factor)))
 # Run factor analysis
-factoranalysis <- factanal(sapply(temp,as.numeric), 3, rotation="promax")
-print(factoranalysis, digits=2, cutoff=.2, sort=TRUE)
+factoranalysis2 <- factanal(sapply(temp,as.numeric), 3, rotation="promax", scores = "regression")
+print(factoranalysis2, digits=2, cutoff=.2, sort=TRUE)
 ```
 
 ```{r fa.MD.plot1}
-load <- factoranalysis$loadings[,1:2]
+load <- factoranalysis2$loadings[,1:2]
 plot(load, type="n", xlim = c(-1.5, 1.5)) 
 text(load, labels=names(temp), cex=.7)  
 ```
 ```{r fa.MD.plot2, fig.height=6}
-loads <- factoranalysis$loadings
+loads <- factoranalysis2$loadings
 fa.diagram(loads)
+```
+
+Observation-specific factor scores are calculated for each of the six found factors--three for the ADHD features and three for the MD features--using Thomson's regression method. These scores are then combined with the larger data set, replacing the specific question features.
+
+```{r factorscores}
+ADHD_scores <- as.data.frame(factoranalysis1$scores) %>% rename(ADHD_f1 = Factor1, ADHD_f2 = Factor2, ADHD_f3 = Factor3)
+MD_scores <- as.data.frame(factoranalysis2$scores) %>% rename(MD_f1 = Factor1, MD_f2 = Factor2, MD_f3 = Factor3)
+df_factors <- df %>% select(-c(starts_with("ADHD.Q"), starts_with("MD.Q")))
+df_factors <- cbind(df_factors, ADHD_scores, MD_scores)
+```
+
+### Missing Data Imputation
+
+Data pre-processing starts with addressing missingness. Most of the features in the dataset, including `Suicide`, are missing values. The most notable of this subset, by a wide margin, is `Psych.meds.`, which is missing values for approximately 67.4% of all observations; it will be dropped. Next up are `Subst.Dx` at approximately 13.1% missingness and `Non.Subst.Dx` at approximately 12.6% missingness, with several more features falling between roughly 5.0 and 10.0%. Regarding patterns of missingness across the subset of features displaying missingness, the vast majority of observations are missing either no values or a value for `Psych.meds.`. There are also groups of observations missing values across the entire subset, across all but one feature, or for related features. 
+
+```{r missing}
+col_missing <- colnames(df_factors)[colSums(is.na(df_factors)) > 0]
+aggr(df_factors[,col_missing], col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(df_factors[,col_missing]), cex.axis=.7, oma=c(10,5,3,3), ylab=c("Histogram","Patterns"))
+```
+
+Imputing meaning for missing values--meaning where it may not exist--can be problematic, particularly with limited domain expertise. The patterns noted above suggest that, in this dataset, the data are missing at random (MAR)--not missing completely at random (MCAR)--given missingness in a particular feature may relate to the values in another feature. There is insufficient information about the dataset to support an assumption of MCAR.
+
+This analysis assumes MAR and employs the multivariate imputation by chained equations (MICE) method to perform multiple imputation for each missing value. MICE can account for the different types of data present in the dataset. Here, MICE imputes using logistic regression for the binary factors, proportional odds models for the ordered factors, and multinomial regression for the non-binary and non-ordered factor (`Abuse`). Then, for each missing value, the most common imputation estimate from the five MICE imputation runs is imputed. And finally, regardless of imputation, the substantially missing `Psych.meds.` is dropped.
+
+```{r imputation}
+impute <- mice(data = df_factors, print=FALSE)
+impute_merge <- merge_imputations(df_factors, impute, df_factors)
+df_impute <- impute_merge %>%
+  select(-c('Alcohol','THC','Cocaine','Stimulants','Sedative.hypnotics','Opioids','Court.order','Education','Hx.of.Violence','Disorderly.Conduct','Suicide','Abuse','Non.subst.Dx','Subst.Dx','Psych.meds.')) %>%
+  rename_at(.vars = vars(ends_with('_imp')),.funs = funs(sub('_imp', '', .)))
+df_impute <- df_impute %>% select(-Psych.meds.) %>% relocate(Suicide, .before = Age)
+```
+
+### Feature Transformation
+
+Feature transformation begins by assessing the numeric features for possible power transformation. Below are skewness statistics for each feature, with negative values reflecting left skewness and positive values reflecting right skewness. Larger values are associated with greater levels of skewness. None of these features show skew large enough to warrant power transformation. They will, however, undergo centering and scaling to facilitate clustering, PCA, and SVM modeling.
+
+```{r skewness}
+knitr::kable(sapply(df_impute[c('Age','ADHD.Total','MD.TOTAL','ADHD_f1','ADHD_f2','ADHD_f3','MD_f1','MD_f2','MD_f3')], skewness), col.names = c('Skewness'))
+```
+
+Most of the dataset's features are stored as factors and must be addressed before moving forward. The non-ordered categorical features (e.g., `Sex` and `Race`) are converted to sets of dummy variables, one dummy for each categorical level. By contrast, the ordered factors (e.g., `Alcohol` and `Education`) are converted to sets of polynomial scores. These scores capture the possible effects--linear, quadratic, cubic, etc.--that can be fit using the ordinal information in the original factor. Following factor conversion, the resulting set of features undergoes centering and scaling.
+
+```{r dummiescombos}
+set.seed(622)
+df_dummy <- dummyVars("~ .", data = df_impute[-1])
+df_dummy <- data.frame(predict(df_dummy, newdata = df_impute))
+df_transform <- df_dummy %>% preProcess(method = c('center','scale')) %>% predict(df_dummy) %>% cbind(df_impute$Suicide) %>% rename(Suicide = 'df_impute$Suicide')
+```
+
+Lastly, the dataset is split 70/30 into a training set (n = 124) and a test set (n = 51). The latter will be held out for validation.
+
+```{r split}
+set.seed(622)
+index <- as.vector(createDataPartition(df_transform$Suicide, p = .70, list = FALSE))
+train <- df_transform[index,] # 124 observations
+test <- df_transform[-index,] # 51 observations
 ```
 
 ### Clustering of Patients
@@ -465,7 +520,7 @@ fa.diagram(loads)
 ### Works Cited
 
 * Gravetter, Frederick J, and Larry B. Wallnau. Statistics for the Behavioral Sciences. , 2013. Print.
-
+* Kuhn, M., and Johnson, K. (2013). *The basics of encoding categorical data for predictive models*. Applied Predictive Modeling. Accessed April 21, 2021 from http://appliedpredictivemodeling.com/blog/2013/10/23/the-basics-of-encoding-categorical-data-for-predictive-models
 
 ### Code Appendix
 
