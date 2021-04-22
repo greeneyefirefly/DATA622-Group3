@@ -520,7 +520,8 @@ test <- df_transform[-index,] # 51 observations
 ### Works Cited
 
 * Gravetter, Frederick J, and Larry B. Wallnau. Statistics for the Behavioral Sciences. , 2013. Print.
-* Kuhn, M., and Johnson, K. (2013). *The basics of encoding categorical data for predictive models*. Applied Predictive Modeling. Accessed April 21, 2021 from http://appliedpredictivemodeling.com/blog/2013/10/23/the-basics-of-encoding-categorical-data-for-predictive-models
+* Kuhn, M. (2019). *The caret package*. Accessed April 21, 2021, from https://topepo.github.io/caret/.
+* Kuhn, M., and Johnson, K. (2013). *The basics of encoding categorical data for predictive models*. Applied Predictive Modeling. Accessed April 21, 2021 from http://appliedpredictivemodeling.com/blog/2013/10/23/the-basics-of-encoding-categorical-data-for-predictive-models.
 
 ### Code Appendix
 
