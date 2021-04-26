@@ -84,6 +84,7 @@ skim(df) %>%
 
 Summary statistics reveal useful information to inform pre-processing and modeling. First, the demographic and questionnaire features are entirely complete, though missingness is present elsewhere. Notably, SVM response `Suicide` is approximately 93 percent complete, and `Psych.meds.` is only approximately 33 percent complete. Second, the feature distributions could require transformation prior to modeling. Some of the questionnaire features show clear skewness (e.g., `ADHD.Q12`) or imbalance (e.g., `MD.Q1g`), while many of the substance use/abuse features appear heavily imbalanced towards "no use". Here again, response `Suicide` is imbalanced towards "no attempt". And third, there are many features, meaning the data set is ripe for the unsupervised methods to follow.
 
+
 Beyond the to-be-dropped `Initial`, all dataset features are loaded in numeric format, though many of them are categorical if not ordinal in nature. These features thus require conversion to factors.
 
 ```{r initproc}
@@ -380,7 +381,7 @@ where $N$ is the number of items, $\bar c$ is the average inter-item covariance 
 
 This measure is the most frequently used measures of reliability, however it assumes that scale items are repeated measurements, and for this analysis this assumption is kept. Moreover, Guttman’s Lambda 6 (G6) is another measure that evaluates the reliability of individual items. This means that it provides information about how well individual questions reflect the concept being measured.
 
-The reliablity analysis for the ADHD questions highlights that the Cronbach’s alpha is 0.94 with a 95% confidence boundaries (0.93, 0.96). Discarding any item would not result in an increase in the reliablity, suggesting that all the items should be kept. By looking at the individual items, G6 is also $\ge 0.7$ suggesting that the question does provide insights on the concept being assessed to an acceptable level. There individual correlations are also positive and high.
+The reliability analysis for the ADHD questions highlights that the Cronbach’s alpha is 0.94 with a 95% confidence boundaries (0.93, 0.96). Discarding any item would not result in an increase in the reliability, suggesting that all the items should be kept. By looking at the individual items, G6 is also $\ge 0.7$ suggesting that the question does provide insights on the concept being assessed to an acceptable level. There individual correlations are also positive and high.
 
 ```{r Cronbach.ADHD}
 # calculate cronbach's alpha - ADHD
@@ -406,7 +407,7 @@ as.data.frame(cbind(Items = names(temp),
 
 ### Factor Analysis
 
-Typically in behavioral science studies where a test component is a questionnaire, individual items may represent a common, underlying factor. To analysis this, factor analysis is a method that allows to find commonalities in data. This method is particularly useful when dealing with many variables. Unlike PCA, which is a linear combination of variables, factor analysis is a measurement model of a hidden latent variables that affect several variables at once.
+Typically in behavioral science studies where a test component is a questionnaire, individual items may represent a common, underlying factor. To understand this, factor analysis is a method that allows us to find commonalities in data. This method is particularly useful when dealing with many variables. Unlike PCA, which is a linear combination of variables, factor analysis is a measurement model of hidden latent variables that affect several variables at once.
 
 The reliability test has already highlighted that the ADHD questions are strongly correlated, therefore, an oblique rotation, namely promax rotation is used search for a clearer association between individual factors and the various variables. The test of the hypothesis suggests that 3 factors are sufficient, and the chi square statistic is 197.3 on 102 degrees of freedom, p-value $\le 0.05$. Moreover, the factor loading are sufficiently, and from the plot of the results, the ADHD questions can be grouped together into 3 sets which reflect the same underlying factor. These items can be summed into a new factor item to help reduce the dimensions of the data set.
 
@@ -510,8 +511,299 @@ test <- df_transform[-index,] # 51 observations
 #### Sub
 
 ### Principal Component Analysis (PCA)
+Principal Component Analysis (PCA) is a method that allows us to summarize information in datasets that contain correlated numerical variables. Each feature is considered a dimension, and the goal of PCA is to reduce dimensionality while preserving the information contained in the original dataset. The resulting features (called principal components) are linear combinations of the original features and contain the maximum variation (information) in the dataset. 
 
-#### Sub
+The value of PCA is that it allows us to: (1) identify correlated variables and outliers, (2) discover hidden patterns and trends and (3) remove redundancy and noise. 
+
+Traditional PCA works with continuous, numerical features and creates a Pearson correlation matrix behind-the-scenes. Pearson correlations assume that all variables are normally distributed -- in other words, that they are continuous, quantitative, symmetric, and bell shaped. Although we can technically apply PCA to the raw data in our dataset and get an output, since most of the features are dichotomous (ie, binary) or ordinal, the output will not hold much meaning. 
+
+The alternative to this is to base PCA off of a polychoric correlation. These correlations assume that the variables are ordered measures of an underlying continuum, so they don't need to be continuous or symmetrical (which works out well for our binary and ordinal features!). Like a Pearson correlation, the values of a polychoric correlation range from -1 to 1 and the the value/sign measures the strength and direction of the relationship. 
+
+#### PCA - Dataset
+Broadly speaking, our base dataset contains 3 main categories of features (demographics, questionnaire responses, and drug use) and a few additional miscellaneous features. Off the bat, we'll eliminate the `Psych.meds` variable, because it has more than 50% of its values missing. We will also leave demographic information (`Age`, `Sex`, and `Race`) out of the PCA because we want to preserve these values. 
+
+The approach for this analysis will be to identify the optimal reductions by first performing PCA on the 2 questionnaire sets and drug variables independently and then on a combination of these categories and the remaining miscellaneous categories together. The independent PCA of questionnaire answers & drug variables assumes that the features within these categories are correlated, but that the categories are independent of one another. We will compare the results of these analyses to the final results with all variables included together. 
+
+PCA only works with non-null values, so we will drop any records that include missing values. Additionally, since our data dictionary indicates that ADHD questions should be on scale of 1-4, we will eliminate the record in the dataset that is labeled 5, as this is likely a data-entry error. 
+
+```{r pca_base}
+pca_base <- df %>%
+  select(-Age, -Sex, -Race, -ADHD.Total, -MD.TOTAL, -Education, -Psych.meds.) %>%
+  filter(ADHD.Q5 != 5) %>%
+  drop_na()
+```
+
+The base dataset for the PCA includes `r nrow(pca_base)` rows and `r ncol(pca_base)-1` total features. 
+
+#### ADHD Questions
+First, we will take a look at the 18 unlabeled self-reported ADHD questions. 
+
+We'll pass a polychoric correlation matrix into the principal function to calculate the principal components. The components are arranged in descending order of contribution to variance, with RC1 explaining the largest variance and RC3 explaining the least amount of variance. Each component is a linear combination of the variables, and the resulting eigenvectors are the factors that the features need to be multiplied by for the final calculation of the component score for an observation. 
+
+```{r pca_adhd}
+
+df_adhd <- pca_base %>% 
+  select(starts_with('ADHD'), -Suicide) %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate_if(is.character, as.numeric)
+
+poly_adhd <- polychoric(df_adhd)
+adhd_rho <- poly_adhd$rho
+
+adhd_pca <- principal(r = adhd_rho, nfactors = 2, covar = TRUE, rotate="none")
+```
+
+The resulting eigenvalues are the variances for each of the components. We can visualize them as percentages in a scree plot. 
+
+```{r pca_adhd_scree}
+adhd_var <- adhd_pca$values/sum(adhd_pca$values)
+rounded_adhd_var <- round(adhd_var,2)
+
+qplot(c(1:length(adhd_pca$values)), adhd_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_adhd_var),hjust=0, vjust=-1) +
+  labs(x = "Principal Component", 
+       y = "Variance Explained",
+       title = "Scree Plot: PCA on ADHD Questions") +
+  ylim(0, 1)
+
+```
+
+We can see that 65% of the variance is explained by principal components 1 and 2 alone! Since our third task is to use an SVM to predict the `Suicide` variable, we can see if there are any obvious patterns between this variable and the first two principal components. To do this, we will use the loadings matrix to calculate the final pca scores for each observation in the dataset. We will append these values to our original dataset and plot with respect to the `Suicide` variable to see if we can identify any meaningful relationships. 
+
+```{r, pca_adhd_final}
+adhd_pca$scores <- factor.scores(df_adhd, adhd_pca) 
+df_adhd_final <- cbind(pca_base %>% select(Suicide), adhd_pca$scores$scores)
+
+ggplot(df_adhd_final, aes(PC1, PC2, col = Suicide, fill = Suicide)) +
+  stat_ellipse(geom = 'polygon', col = 'black', alpha = 0.5) +
+  geom_point(shape = 21, col = 'black')
+
+```
+
+We can see that there is still quite a bit of overlap between the two classes. To determine the total number of principal components that we can reduce to, we will use 90% as a cutoff. In other words, we will accept the number of components that make up 90% of the variability in the data. We can identify this threshold by looking at a cumulative plot of the variances. 
+
+```{r pca_adhd_cumulative}
+
+adhd_cumulative_var <- cumsum(adhd_pca$values/sum(adhd_pca$values))
+rounded_adhd_cumulative_var <- round(adhd_cumulative_var,2)
+
+qplot(c(1:length(adhd_pca$values)), adhd_cumulative_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_adhd_cumulative_var),hjust=0, vjust=1) +
+  labs(x = "Principal Component", 
+       y = "Cumulative Variance Explained",
+       title = "Scree Plot: PCA on ADHD Questions") +
+  ylim(0, 1)
+
+```
+
+Our final analysis shows that we can reduce the number of ADHD features to 9 principal components and retain 90% of the variability in the data. 
+
+
+#### Mood Disorder Questions 
+We will take a similar approach with the Mood Disorder questions. First we'll calculate the polychoric correlation matrix and pass it to the principal function. 
+
+```{r pca_mood}
+
+df_mood <- pca_base %>% 
+  select(starts_with('MD'), -Suicide) %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate_if(is.character, as.numeric)
+
+poly_mood <- polychoric(df_mood)
+mood_rho <- poly_mood$rho
+
+mood_pca <- principal(r = mood_rho, nfactors = 2, covar = TRUE,  rotate="none")
+```
+
+Next, we can visualize the eigenvalues as percentages in a scree plot. 
+
+```{r pca_mood_scree}
+mood_var <- mood_pca$values/sum(mood_pca$values)
+rounded_mood_var <- round(mood_var,2)
+
+qplot(c(1:length(mood_pca$values)), mood_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_mood_var),hjust=0, vjust=-1) +
+  labs(x = "Principal Component", 
+       y = "Variance Explained",
+       title = "Scree Plot: PCA on Mood Disorder Questions") +
+  ylim(0, 1)
+
+```
+
+We can see that 66% of the variance is explained by the first two principal components. We'll take a look at these components with respect to the `Suicide` variable. 
+
+```{r, pca_mood_final}
+mood_pca$scores <- factor.scores(df_mood,mood_pca) 
+df_mood_final <- cbind(pca_base %>% select(Suicide), mood_pca$scores$scores)
+
+ggplot(df_mood_final, aes(PC1, PC2, col = Suicide, fill = Suicide)) +
+  stat_ellipse(geom = 'polygon', col = 'black', alpha = 0.5) +
+  geom_point(shape = 21, col = 'black')
+
+```
+Still quite a bit of overlap, but we can start to see some distinctions between the two classes (lower PC1 is more indicative of non-Suicide individuals).
+
+Finally, we can identify the number of principal components to use in order to meet the 90% variability cutoff. 
+
+```{r pca_mood_cumulative}
+
+mood_cumulative_var <- cumsum(mood_pca$values/sum(mood_pca$values))
+rounded_mood_cumulative_var <- round(mood_cumulative_var,2)
+
+qplot(c(1:length(mood_pca$values)), mood_cumulative_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_mood_cumulative_var),hjust=0, vjust=1) +
+  labs(x = "Principal Component", 
+       y = "Cumulative Variance Explained",
+       title = "Scree Plot: PCA on Mood Disorder Questions") +
+  ylim(0, 1)
+
+```
+
+Our final analysis shows that we can reduce the number of Mood Disorder features to 7 principal components and retain 90% of the variability in the data. 
+
+#### Drug Features
+
+Finally, we'll take a look at the drug features. This subset of data will include the following features: `Alcohol`, `THC`, `Cocaine`, `Stimulants`, `Sedative.hypnotics`, `Opioids`, and `Subst.Dx`.
+```{r pca_drug}
+df_drug <- pca_base %>% 
+  select(Alcohol, THC, Cocaine, Stimulants, Sedative.hypnotics, Opioids, Subst.Dx) %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate_if(is.character, as.numeric)
+
+poly_drug <- polychoric(df_drug)
+drug_rho <- poly_drug$rho
+
+drug_pca <- principal(r = drug_rho, nfactors = 2, covar = TRUE, rotate= 'none')
+```
+
+Once again, we can visualize the eigenvalues as percentages in a scree plot. 
+
+```{r pca_drug_scree}
+drug_var <- drug_pca$values/sum(drug_pca$values)
+rounded_drug_var <- round(drug_var,2)
+
+qplot(c(1:length(drug_pca$values)), drug_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_drug_var),hjust=0, vjust=-1) +
+  labs(x = "Principal Component", 
+       y = "Variance Explained",
+       title = "Scree Plot: PCA on Drug Features") +
+  ylim(0, 1)
+
+```
+
+The principal components derived from the drug features are a bit more balanced than the other two sets of features. The first component and second components only account for 34% and 24% (respectively) of the variability in the dataset. Nonetheless, we will visualize these in comparison to the `Suicide` variable to see if we can identify any patterns. 
+
+```{r, pca_drug_final}
+drug_pca$scores <- factor.scores(df_drug, drug_pca) 
+df_drug_final <- cbind(pca_base %>% select(Suicide), drug_pca$scores$scores)
+
+ggplot(df_drug_final, aes(PC1, PC2, col = Suicide, fill = Suicide)) +
+  stat_ellipse(geom = 'polygon', col = 'black', alpha = 0.5) +
+  geom_point(shape = 21, col = 'black')
+
+```
+
+The 0 class is embedded almost completely in the 1 class, so the first two components don't give us as much insight as the other two categories of features. 
+
+Finally, we can identify the number of principal components to use in order to meet the 90% variability cutoff. 
+
+```{r pca_drug_cumulative}
+
+drug_cumulative_var <- cumsum(drug_pca$values/sum(drug_pca$values))
+rounded_drug_cumulative_var <- round(drug_cumulative_var,2)
+
+qplot(c(1:length(drug_pca$values)), drug_cumulative_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_drug_cumulative_var),hjust=0, vjust=1) +
+  labs(x = "Principal Component", 
+       y = "Cumulative Variance Explained",
+       title = "Scree Plot: PCA on Drug Features") +
+  ylim(0, 1)
+
+```
+
+To meet the 90% threshold, we will need to use 5 principal components. Since there are only 7 unique drug features, this reduction might not be as worth it to pursue. 
+
+#### All Numeric Features
+Finally, we'll take a look at all of the features combined. This approach assumes dependence of features across categories (questionnaires, drugs, and miscellaneous). 
+
+```{r pca_all}
+
+df_all <- pca_base %>% 
+  select(-Suicide, -Sedative.hypnotics) %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate_if(is.character, as.numeric)
+
+poly_all <- polychoric(df_all)
+all_rho <- poly_all$rho
+
+all_pca <- principal(r = all_rho, nfactors = 2, covar = TRUE, rotate = 'none')
+
+```
+
+
+The final scree plot will show us the variances for all of the principal components. 
+
+```{r pca_all_scree}
+all_var <- all_pca$values/sum(all_pca$values)
+rounded_all_var <- round(all_var,1)
+
+qplot(c(1:length(all_pca$values)), all_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_all_var),hjust=0, vjust=-1) +
+  labs(x = "Principal Component", 
+       y = "Variance Explained",
+       title = "Scree Plot: PCA on Selected Features") +
+  ylim(0, 1)
+
+```
+
+Only about 40% of the variability is explained by the first two components. 
+
+```{r, pca_all_final}
+all_pca$scores <- factor.scores(df_all, all_pca) 
+df_all_final <- cbind(pca_base %>% select(Suicide), all_pca$scores$scores)
+
+ggplot(df_all_final, aes(PC1, PC2, col = Suicide, fill = Suicide)) +
+  stat_ellipse(geom = 'polygon', col = 'black', alpha = 0.5) +
+  geom_point(shape = 21, col = 'black')
+
+```
+
+Despite this, we can see from the plot of the two components versus the `Suicide` variable that the lower values of PC1 are associated with less suicides. 
+
+One final cumulative scree plot will help us to identify how many principal components will need to be kept to meet the 90% threshold. 
+
+```{r pca_all_cumulative_scree}
+all_cumulative_var <- cumsum(all_pca$values/sum(all_pca$values))
+rounded_all_cumulative_var <- round(all_cumulative_var,1)
+
+qplot(c(1:length(all_pca$values)), all_cumulative_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_all_cumulative_var),hjust=0, vjust=1) +
+  labs(x = "Principal Component", 
+       y = "Cumulative Variance Explained",
+       title = "Scree Plot: PCA on Selected Features") +
+  ylim(0, 1)
+
+```
+
+To retain 90% of the variance in the dataset, we would need to keep 17 principal components. 
+
+
+#### PCA Conclusions
+
+We explored the differences between completing PCA independently on the 3 categories of features (ADHD questionnaire, MD questionnaire, and drug features) and across all cateogories. We found: 
+
+* The ADHD question PCA analysis resulted in the first principal component accounting for almost 60% of the variance in the data. To retain 90% of the variance, we would need to keep 9 of the principal components. This results in a reduction of ADHD features by 50%. 
+* The Mood disorder question PCA analysis resulted in the first principal component accounting for 53% of the variance in the data. When visualizing this against the `Suicide` feature, we started to see some separation of the 2 classes based on the first two components alone. To retain 90% of the variance, we would need to keep 7 of the principal components. This results in a reduction of Mood Disorder Features by a little over 50%. 
+* The drug feature PCA analysis resulted in the first principal component accounting for about 34% of the variance in the data. To retain 90% of the variance, we would need to keep 5 of the principal components. Since there are only 7 drug features in the dataset, this reduction might not be necessary. 
+* The final PCA analysis with all features resulted in the first principal component accounting for 30% of the variance in the data. To retain 90% of the variance, we would need to keep 17 principal components. 
 
 ### Suicide Predictions using Support Vector Machine (SVM)
 
