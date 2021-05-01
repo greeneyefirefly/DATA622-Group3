@@ -11,5 +11,3 @@ Collaborators:
 Our published Project #3 can be found on [RPub](https://rpubs.com/greeneyefirefly/data622-project3).
 
 Our published Project #4 can be found on [RPub](https://rpubs.com/greeneyefirefly/data622-project4).
-
-Our published Final Project can be found on [RPub](https://rpubs.com/greeneyefirefly/data622-finalproject).
