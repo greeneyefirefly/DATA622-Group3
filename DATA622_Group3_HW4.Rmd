@@ -1,0 +1,1071 @@
+---
+title: "CUNY SPS DATA 622 - Machine Learning and Big Data"
+subtitle: 'Spring 2021 - Group 3 - Homework 4'
+author: "Maryluz Cruz, Samantha Deokinanan, Amber Ferger, Tony Mei, and Charlie Rosemond"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  html_document:
+    theme: cerulean
+    highlight: pygments
+urlcolor: purple
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.align = "center")
+```
+
+### R Packages
+
+The `R` language is used to facilitate data modeling. The main `R` packages used for data wrangling, visualization, and graphics are listed below.
+
+```{r libraries, echo=TRUE}
+# Required R packages
+library(tidyverse)
+library(kableExtra)
+library(summarytools)
+library(GGally)
+library(corrplot)
+library(e1071)
+library(dummies)
+library(caret)
+library(psych)
+library(VIM)
+library(mice)
+library(useful) # FitKMeans function for clustering
+library(cluster)
+library(factoextra)
+```
+
+## Overview {.tabset .tabset-fade .tabset.-pills}
+
+This analysis uses clustering, principal component analysis (PCA), and the support vector machine (SVM) algorithm to derive insights from a mental health dataset. It begins with exploratory data analysis (EDA) and pre-processing followed by clustering and PCA. It finishes with SVM modeling of demographic and mental-health-related features to predict whether a patient attempted suicide.
+
+All references and a technical appendix of all R code are available at the end of this report.
+
+***
+<center> **PROJECT SECTIONS** </center>
+***
+
+### EDA
+
+EDA seeks to understand the data and its nuances. It draws on a combination of summary statistics, and univariate and bivariate visualizations to summarize the dataset, its response, and the initial group of possible features. This information will inform pre-processing of the dataset prior to modeling.
+
+#### Understanding the Data
+
+Sourced from an actual research project and deidentified, the dataset contains individual samples describing patients' experiences with ADHD, mood disorders, substance use and misuse, and related mental health behaviors. It consists of 175 samples and 54 columns, including an identifier `Initial` to be dropped and a response `Suicide` to be modeled via SVM. The remaining features for modeling range from demographic information (e.g., `Age`) and various questionnaire responses (e.g., `ADHD.Q1`) to used/abused substances (e.g., `THC`) and medications (e.g., `Psych.meds`). All columns in the dataset are listed and described below.
+
+*Mental Health Dataset Column Definition*
+
+Columns | Variable | Description  
+---|---|-----  
+C |  Sex | Male-1, Female-2  
+D | Race | White-1, African American-2, Hispanic-3, Asian-4, Native American-5, Other or missing data -6  
+E - W | ADHD self-report scale |  Never-0, rarely-1, sometimes-2, often-3, very often-4  
+X - AM | Mood disorder questions |  No-0, yes-1; question 3: no problem-0, minor-1, moderate-2, serious-3  
+AN - AS | Individual substances misuse |   no use-0, use-1, abuse-2, dependence-3   
+AT | Court Order |   No-0, Yes-1  
+AU | | Education |  1-12 grade, 13+ college  
+AV | History of Violence |  No-0, Yes-1  
+AW | Disorderly Conduct |  No-0, Yes-1  
+AX | Suicide attempt |  No-0, Yes-1  
+AY | Abuse Hx |  No-0, Physical (P)-1, Sexual (S)-2, Emotional (E)-3, P&S-4, P&E-5, S&E-6, P&S&E-7  
+AZ | Non-substance-related Dx |  0 - none; 1 - one; 2 - More than one  
+BA | Substance-related Dx |  0 - none; 1 - one Substance-related; 2 - two; 3 - three or more  
+BB | Psychiatric Meds |  0 - none; 1 - one psychotropic med; 2 - more than one psychotropic med  
+
+```{r load}
+df <- read_csv("https://raw.githubusercontent.com/greeneyefirefly/DATA622-Group3/main/Project_4/ADHD_data.csv")
+df <- df %>% rename_all(make.names)
+```
+
+<details>
+  <summary> *Expand for Basic Statistic Summary* </summary>
+  
+```{r summarystats}
+dfSummary(df, plain.ascii = TRUE, style = "grid", graph.col = FALSE, footnote = NA)
+```
+
+</details>
+ 
+ 
+Summary statistics reveal useful information to inform pre-processing and modeling. First, the demographic and questionnaire features are entirely complete, though missingness is present elsewhere. Notably, SVM response `Suicide` is approximately 93 percent complete, and `Psych.meds.` is only approximately 33 percent complete. Second, the feature distributions could require transformation prior to modeling. Some of the questionnaire features show clear skewness (e.g., `ADHD.Q12`) or imbalance (e.g., `MD.Q1g`), while many of the substance use/abuse features appear heavily imbalanced towards "no use". Here again, response `Suicide` is imbalanced towards "no attempt". And third, there are many features, meaning the data set is ripe for the unsupervised methods to follow.
+
+Beyond the to-be-dropped `Initial`, all dataset features are loaded in numeric format, though many of them are categorical if not ordinal in nature. These features thus require conversion to factors.
+
+```{r initproc}
+df[,c(3,4,24:37,46,48:51)] <- lapply(df[,c(3,4,24:37,46,48:51)], 
+                                     function(x) factor(x, ordered=FALSE))
+df[,c(5:22,38,40:45,47,52:54)] <- lapply(df[,c(5:22,38,40:45,47,52:54)], 
+                                         function(x) factor(x, ordered=TRUE))
+df <- df %>% select(-Initial)
+```
+
+EDA continues with sets of cross-tabulations between SVM modeling response `Suicide` and the ADHD and MD questionnaire groups, respectively. `Suicide` is coded as "1" if an individual has attempted suicide and "0" if not. The ADHD features are coded on a general Likert from never ("0") through very often ("4"). The MD features are coded Yes/No ("1"/"0").
+
+```{r ADHDcrosstabs}
+lapply(subset(df, select=ADHD.Q1:ADHD.Q18), 
+       function(col) ctable(x = df$Suicide, y = col, prop = 'r'))
+```
+
+For most of the ADHD features, individuals having attempted suicide (`Suicide` = "1") skew towards the higher end of the scale (e.g., towards likely or very likely) relative to their non-attempting counterparts. Minimal information is available on the questionnaire itself, but presumably, these features describe likelihood of exhibiting or partaking in certain behaviors indicative of ADHD. Later analysis may reveal specific question features to be particularly important.
+
+```{r MDcrosstabs}
+lapply(subset(df, select=MD.Q1a:MD.Q3), function(col) ctable(x = df$Suicide, y = col, prop = 'r'))
+```
+
+Like the ADHD features, the MD question features display clear differences between classes of `Suicide`. Individuals having attempted suicide (`Suicide` = "1") tend towards question answers of yes ("1") in often substantially greater proportions than non-attempters. The only exception is `MD.Q1c`, where both classes of `Suicide` show yes proportions of approximately 0.55.
+
+#### Categorical Features
+
+Next comes a focus on `Suicide` and its relationships with the categorical demographic and education features as well as the categorical `Abuse`.
+
+`Sex`: For this dataset, the proportion of females having attempted suicide (38.9%) is nearly double the same proportion among males (23.3%).
+
+```{r suicide_sex, fig.height=3.5}
+tab <- with(df, table(Sex, Suicide))
+tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
+  filter(Suicide == '1')
+
+tab %>%
+  mutate(Sex = fct_recode(Sex, Male='1', Female='2')) %>%
+  ggplot() +  
+  geom_col(aes(x=Sex, y=Freq, fill=Sex)) +
+  geom_label(aes(x=Sex, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
+  theme(legend.position='none') +
+  labs(title = 'Proportion attempting suicide, by sex',
+       y = 'Proportion')
+```
+
+`Race`: For this dataset, approximately half of individuals indicating race/ethnicity as "Other/Missing" have attempted suicide (~50.0%). That proportion compares with approximately 41.2% among "White" individuals and approximately 22.0% among "Black" individuals. Zero "Hispanic" individuals in this dataset have attempted suicide.
+
+```{r suicide_race, fig.height=3.5}
+tab <- with(df, table(Race, Suicide))
+tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
+  filter(Suicide == '1')
+
+tab %>%
+  mutate(Race = fct_recode(Race,
+                           White='1',
+                           Black='2',
+                           Hispanic='3',
+                           Asian='4',
+                           'Native American'='5',
+                           'Other/Missing' = '6')) %>%
+  ggplot() +  
+  geom_col(aes(x=Race, y=Freq, fill=Race)) +
+  geom_label(aes(x=Race, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
+  theme(legend.position='none') +
+  labs(title = 'Proportion attempting suicide, by race/ethnicity',
+       y = 'Proportion')
+```
+
+`Education`: For this dataset, zero individuals with more than fifteen years of formal education have attempted suicide. Level "15", with a proportion having attempted suicide of approximately 100%, is an outlier relative to lower levels of education, which all show proportions of approximately 50% or below.
+
+```{r suicide_education, fig.height=3}
+tab <- with(df, table(Education, Suicide))
+tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
+  filter(Suicide == '1')
+
+tab %>%
+  ggplot() +  
+  geom_col(aes(x=Education, y=Freq)) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
+  theme(legend.position='none') +
+  labs(title = 'Proportion attempting suicide, by education level',
+       y = 'Proportion')
+```
+
+`Abuse`: For this dataset, individuals having been sexually and/or emotionally abused are particularly likely to have attempted suicide. Approximately 75% of individuals in each of the "Emotional (E)" and "Physical & Sexual & Emotional" categories have attempted suicide. These proportions compare to roughly one in five individuals in each of the "No" and "Physical & Emotional" categories.
+
+```{r suicide_abuse, fig.height=3.7}
+tab <- with(df, table(Abuse, Suicide))
+tab <- as.data.frame(prop.table(tab, margin = 1)) %>%
+  filter(Suicide == '1')
+
+tab %>%
+  mutate(Abuse = fct_recode(Abuse,
+                         No='0',
+                         'Physical (P)'='1',
+                         'Sexual (S)'='2',
+                         'Emotional (E)'='3',
+                         'P & S'='4',
+                         'P & E'='5',
+                         'S & E'='6',
+                         'P & S & E'='7')) %>%
+  ggplot() +  
+  geom_col(aes(x=Abuse, y=Freq, fill=Abuse)) +
+  geom_label(aes(x=Abuse, y=Freq, label = paste0(round((Freq*100),1),"%"))) +
+  scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
+  theme(legend.position='none') +
+  labs(title = 'Proportion attempting suicide, by abuse category',
+       y = 'Proportion') +
+  scale_x_discrete(guide = guide_axis(angle = 45)) 
+```
+
+#### Feature Correlation
+
+The next group of features for analysis are the numerics--`Age`, `ADHD.Total`, and `MD.TOTAL`--with each one is related to `Suicide` using distribution plots and correlations. For clarity, the plots below do not account for missing values of `Suicide`, which were included in an initial run of plots but whose relationships did not appear to differ in nature from those of the other levels.
+
+```{r suicide_numerics, fig.height=5.5}
+df %>%
+  filter(!is.na(Suicide)) %>%
+  mutate(Suicide = fct_recode(Suicide,
+                              'No attempt' = '0',
+                              Attempt = '1')) %>%
+  ggpairs(
+    columns = c('Suicide', 'Age', 'ADHD.Total', 'MD.TOTAL'),
+    title = "Correlogram of response 'Suicide' and numeric features",
+    ggplot2::aes(color = Suicide),
+    progress = FALSE,
+    lower = list(continuous = wrap(
+      "smooth", alpha = 0.3, size = 0.1
+    ))
+  ) 
+```
+
+Having attempted suicide (`Suicide` = "1") may be related to these numeric features in this dataset. There is a clear difference between the class distributions of `MD.TOTAL`, with the distribution for `Suicide` = "1" shifted higher than its counterpart for `Suicide` = "0". The former's median is roughly equal to the 75th percentile for the latter. Regarding collinearity, overall correlations are essentially non-existent between `Age` and each of `ADHD.Total` and `MD.TOTAL`, though the class-specific correlation values for `Suicide` = "1" are roughly twice the magnitude of those for `Suicide` = "0". The overall correlation between `ADHD.Total` and `MD.TOTAL` is approximately 0.482, suggesting the two features move in somewhat similar directions. Here again, there is a difference by class of `Suicide`: the value among individuals not having attempted suicide is approximately 0.562 compared with approximately 0.41 among individuals who have attempted it.
+
+```{r suicide_feature1, eval=FALSE, fig.height=5.5, include=FALSE}
+df %>%
+  filter(!is.na(Suicide)) %>%
+  mutate(
+    Suicide = fct_recode(Suicide,
+                         'No attempt' = '0',
+                         Attempt = '1'),
+    Court.order = fct_recode(Court.order,
+                             No = '0',
+                             Yes = '1'),
+    Hx.of.Violence = fct_recode(Hx.of.Violence,
+                                No = '0',
+                                Yes = '1'),
+    Disorderly.Conduct = fct_recode(Disorderly.Conduct,
+                                    No = '0',
+                                    Yes = '1')
+  ) %>%
+  ggpairs(
+    columns = c(
+      'Suicide',
+      'Court.order',
+      'Hx.of.Violence',
+      'Disorderly.Conduct'
+    ),
+    title = "Bar plots of response 'Suicide' and selected categorical features",
+    ggplot2::aes(color = Suicide),
+    progress = FALSE,
+    lower = list(discrete = "blank")
+  ) 
+```
+
+There could be differences in proportion between levels of `Suicide` relative to `Court.order`, `Hx.of.Violence`, and `Disorderly.Conduct`. Both `Court.order` and `Hx.of.Violence` skew towards "No"--that is, no court order and no history of violence--but individuals having attempted suicide (`Suicide` = "1") appear to show "Yes" in greater proportions than their non-attempting counterparts. By contrast, most individuals in the dataset have some history of disorderly conduct (`Disorderly.Conduct` = "1"), and the proportions appear relatively similar between classes of `Suicide`.
+
+```{r suicide_feature2, eval=FALSE, fig.height=5.5, include=FALSE}
+df %>%
+  filter(!is.na(Suicide)) %>%
+  mutate(
+    Suicide = fct_recode(Suicide,
+                         'No attempt' = '0',
+                         Attempt = '1'),
+    Non.subst.Dx = fct_recode(
+      Non.subst.Dx,
+      'NA' = 'NA',
+      None = '0',
+      One = '1',
+      'Two or more' = '2'
+    ),
+    Subst.Dx = fct_recode(
+      Subst.Dx,
+      'NA' = 'NA',
+      None = '0',
+      One = '1',
+      Two = '2',
+      'Three or more' = '3'
+    ),
+    Psych.meds. = fct_recode(
+      Psych.meds.,
+      'NA' = 'NA',
+      None = '0',
+      One = '1',
+      'Two or more' = '2'
+    )
+  ) %>%
+  ggpairs(
+    columns = c('Suicide', 'Non.subst.Dx', 'Subst.Dx', 'Psych.meds.'),
+    title = "Bar plots of response 'Suicide' and selected categorical features",
+    ggplot2::aes(color = Suicide),
+    progress = FALSE,
+    lower = list(discrete = "blank")
+  ) 
+```
+
+Distributions for `Non.subst.Dx`, `Subst.Dx`, and `Psych.meds.` are relatively similar regardless of class of `Suicide`. Most individuals in the dataset show zero use of non-substance-related drugs, with fewer individuals at greater levels of use. Use of a single substance-related drug (`Subst.Dx` = "1") is most prevalent in the dataset, followed by zero use and use of two. As noted previously, `Psych.meds.` is primarily missing, and in general, individuals missing values for `Non.subst.Dx` and `Subst.Dx` are missing a value for `Psych.meds.`.
+
+```{r suicide_feature3, eval=FALSE, fig.height=5.5, include=FALSE}
+df %>%
+  filter(!is.na(Suicide)) %>%
+  mutate(
+    Suicide = fct_recode(Suicide,
+                         'No attempt' = '0',
+                         Attempt = '1'),
+    Alcohol = fct_recode(
+      Alcohol,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    ),
+    THC = fct_recode(
+      THC,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    ),
+    Cocaine = fct_recode(
+      Cocaine,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    ),
+    Stimulants = fct_recode(
+      Stimulants,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    ),
+    Sedative.hypnotics = fct_recode(
+      Sedative.hypnotics,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    ),
+    Opioids = fct_recode(
+      Opioids,
+      'NA' = 'NA',
+      'No use' = '0',
+      Use = '1',
+      Abuse = '2',
+      Dependence = '3'
+    )
+  ) %>%
+  ggpairs(
+    columns = c(
+      'Suicide',
+      'Alcohol',
+      'THC',
+      'Cocaine',
+      'Stimulants',
+      'Sedative.hypnotics',
+      'Opioids'
+    ),
+    title = "Bar plots of response 'Suicide' and substance features",
+    ggplot2::aes(color = Suicide),
+    progress = FALSE,
+    upper = list(discrete = "blank"),
+    lower = list(discrete = "blank")
+  ) 
+```
+
+Regarding the substance-misuse features, individuals in this dataset typically either show no use (\* = "0") or dependence (\* = "3"). Use (\* = "1") and abuse (\* = "2") are most common for `Alcohol`, `THC`, and `Cocaine`. Differences in proportions between classes of `Suicide` are most notable within the dependence group for `Alcohol`.
+
+### Reliability of Questions
+
+Likert-type scales are generally used as an attempt to quantify a description that is not directly measurable of an individual's environment and behavior. Several items in a questionnaire try to assess this condition, and so the answers should possess some level of internal consistency, e.g. if a survey on alcoholism is given to a random individual and that individual answers never to alcohol usage, then it is expected that the answer to a question on number of alcoholic drink consumed would be never/none/etc., any other response would lead to an unreliable score. Thus, the overall scale and consistency reliability estimates provide better insights about the data, whereas single question reliabilities are generally very low.
+
+Cronbach’s alpha is a test reliability technique that requires only a single test administration to provide a unique estimate of the reliability for a given questionnaire (Gravetter, *et al*, 2013). Cronbach’s alpha is the average value of the reliability coefficients one would obtained for all possible combinations of items when split into two half-tests:
+
+\[\alpha = \frac{N*\bar c}{\bar v + (N-1)\bar c}\],
+
+where $N$ is the number of items, $\bar c$ is the average inter-item covariance among items, $\bar v$ is the average variance. This give a value from 0 to 1, and if Cronbach’s alpha $\le 0.7$, the questions are not internally consistent and do not capture the same concept the are supposed too. 
+
+This measure is the most frequently used measures of reliability, however it assumes that scale items are repeated measurements, and for this analysis this assumption is kept. Moreover, Guttman’s Lambda 6 (G6) is another measure that evaluates the reliability of individual items. This means that it provides information about how well individual questions reflect the concept being measured.
+
+The reliability analysis for the ADHD questions highlights that the Cronbach’s alpha is 0.94 with a 95% confidence boundaries (0.93, 0.96). Discarding any item would not result in an increase in the reliability, suggesting that all the items should be kept. By looking at the individual items, G6 is also $\ge 0.7$ suggesting that the question does provide insights on the concept being assessed to an acceptable level. There individual correlations are also positive and high.
+
+```{r Cronbach.ADHD}
+# calculate cronbach's alpha - ADHD
+temp = as.data.frame(sapply(df[,c(4:21)], factor))
+Cronbach.ADHD <- psych::alpha(sapply(temp,as.numeric), check.keys=F)
+as.data.frame(cbind(Items = names(temp),
+                    alpha = round(Cronbach.ADHD[["alpha.drop"]][["raw_alpha"]],3),
+                    G6 = round(Cronbach.ADHD[["alpha.drop"]][["G6(smc)"]],3),
+                    cor = round(Cronbach.ADHD[["item.stats"]][["r.cor"]],3))) 
+```
+
+As for the reliability analysis for the MD questions, the Cronbach’s alpha is 0.86 with a 95% confidence boundaries (0.83, 0.89). In this case, although it is relatively high, the results suggest that removing `MD.Q1c` and `MD.Q1k`, or `MD.Q3` only, an alpha of 0.88 can be achieved. By looking at the individual items, G6 is also $\ge 0.7$ suggesting that the question does provide insights on the concept being assessed to an acceptable level. Lastly, the individual correlations are moderate, noticeable for those that can improve the reliability.
+
+```{r Cronbach.MD}
+# calculate cronbach's alpha - MD
+temp = as.data.frame(sapply(df[,c(23:37)], factor))
+Cronbach.MD <- psych::alpha(sapply(temp,as.numeric), check.keys=F)
+as.data.frame(cbind(Items = names(temp),
+                    alpha = round(Cronbach.MD[["alpha.drop"]][["raw_alpha"]],3),
+                    G6 = round(Cronbach.MD[["alpha.drop"]][["G6(smc)"]],3),
+                    cor = round(Cronbach.MD[["item.stats"]][["r.cor"]],3))) 
+```
+
+### Factor Analysis
+
+Typically in behavioral science studies where a test component is a questionnaire, individual items may represent a common, underlying factor. To understand this, factor analysis is a method that allows us to find commonalities in data. This method is particularly useful when dealing with many variables. Unlike PCA, which is a linear combination of variables, factor analysis is a measurement model of hidden latent variables that affect several variables at once.
+
+The reliability test has already highlighted that the ADHD questions are strongly correlated, therefore, an oblique rotation, namely promax rotation is used search for a clearer association between individual factors and the various variables. The test of the hypothesis suggests that 3 factors are sufficient, and the chi square statistic is 197.3 on 102 degrees of freedom, p-value $\le 0.05$. Moreover, the factor loading are sufficiently, and from the plot of the results, the ADHD questions can be grouped together into 3 sets which reflect the same underlying factor. These items can be summed into a new factor item to help reduce the dimensions of the data set.
+
+```{r fa.ADHD}
+# Omitting NAs
+temp = na.omit(as.data.frame(sapply(df[,c(4:21)], factor)))
+# Run factor analysis
+factoranalysis1 <- factanal(sapply(temp,as.numeric), 3, rotation="promax", 
+                            scores = "regression")
+print(factoranalysis1, digits=2, cutoff=.2, sort=TRUE)
+```
+
+```{r fa.ADHD.plot1}
+load <- factoranalysis1$loadings[,1:2]
+plot(load, type="n", xlim = c(-1.5, 1.5)) 
+text(load, labels=names(temp), cex=.7)  
+```
+```{r fa.ADHD.plot2, fig.height=6}
+loads <- factoranalysis1$loadings
+fa.diagram(loads)
+```
+
+Looking at the MD questions, the data labeling suggest that these are 3 questions, with question 1 having multiple follow-up questions. The reliability test highlighted that the variables are moderately correlated, so the promax rotation is used. As expected, the test of the hypothesis suggests that 3 factors are sufficient, and the chi square statistic is 88.82 on 63 degrees of freedom, p-value $\le 0.05$.For most, the factor loading are sufficiently, and from the plot of the results, the MD questions can be grouped together into 3 sets which reflect the same underlying factor. It should be noted that `MD.Q1L` and `MD.Q1m` were not correlated strongly with the other questions that aim to extract a specific information about the respondents. In such cases, it may be necessary to remove these questions from the survey. 
+
+```{r fa.MD}
+# Omitting NAs
+temp = na.omit(as.data.frame(sapply(df[,c(23:37)], factor)))
+# Run factor analysis
+factoranalysis2 <- factanal(sapply(temp,as.numeric), 3, rotation="promax", 
+                            scores = "regression")
+print(factoranalysis2, digits=2, cutoff=.2, sort=TRUE)
+```
+
+```{r fa.MD.plot1}
+load <- factoranalysis2$loadings[,1:2]
+plot(load, type="n", xlim = c(-1.5, 1.5)) 
+text(load, labels=names(temp), cex=.7)  
+```
+```{r fa.MD.plot2, fig.height=6}
+loads <- factoranalysis2$loadings
+fa.diagram(loads)
+```
+
+Observation-specific factor scores are calculated for each of the six found factors--three for the ADHD features and three for the MD features--using Thomson's regression method. These scores are then combined with the larger data set, replacing the specific question features.
+
+```{r factorscores}
+ADHD_scores <- as.data.frame(factoranalysis1$scores) %>% 
+  rename(ADHD_f1 = Factor1, ADHD_f2 = Factor2, ADHD_f3 = Factor3)
+MD_scores <- as.data.frame(factoranalysis2$scores) %>% 
+  rename(MD_f1 = Factor1, MD_f2 = Factor2, MD_f3 = Factor3)
+df_factors <- df %>% select(-c(starts_with("ADHD.Q"), starts_with("MD.Q")))
+df_factors <- cbind(df_factors, ADHD_scores, MD_scores)
+```
+
+### Pre-processing of Data  
+#### Missing Data Imputation
+
+Data pre-processing starts with addressing missingness. Most of the features in the dataset, including `Suicide`, are missing values. The most notable of this subset, by a wide margin, is `Psych.meds.`, which is missing values for approximately 67.4% of all observations; it will be dropped. Next up are `Subst.Dx` at approximately 13.1% missingness and `Non.Subst.Dx` at approximately 12.6% missingness, with several more features falling between roughly 5.0 and 10.0%. Regarding patterns of missingness across the subset of features displaying missingness, the vast majority of observations are missing either no values or a value for `Psych.meds.`. There are also groups of observations missing values across the entire subset, across all but one feature, or for related features. 
+
+```{r missing}
+col_missing <- colnames(df_factors)[colSums(is.na(df_factors)) > 0]
+aggr(df_factors[,col_missing], col=c('navyblue','red'), numbers=TRUE, 
+     sortVars=TRUE, labels=names(df_factors[,col_missing]), 
+     cex.axis=.7, oma=c(10,5,3,3), ylab=c("Histogram","Patterns"))
+```
+
+Imputing meaning for missing values--meaning where it may not exist--can be problematic, particularly with limited domain expertise. The patterns noted above suggest that, in this dataset, the data are missing at random (MAR)--not missing completely at random (MCAR)--given missingness in a particular feature may relate to the values in another feature. There is insufficient information about the dataset to support an assumption of MCAR.
+
+This analysis assumes MAR and employs the multivariate imputation by chained equations (MICE) method to perform multiple imputation for each missing value. MICE can account for the different types of data present in the dataset. Here, MICE imputes using logistic regression for the binary factors, proportional odds models for the ordered factors, and multinomial regression for the non-binary and non-ordered factor (`Abuse`). Then, for each missing value, the most common imputation estimate from the five MICE imputation runs is imputed. And finally, regardless of imputation, the substantially missing `Psych.meds.` is dropped.
+
+```{r imputation, eval=FALSE, include=FALSE}
+impute <- mice(data = df_factors, print=FALSE)
+impute_merge <- sjmisc::merge_imputations(df_factors, impute, df_factors)
+df_impute <- impute_merge %>%
+  select(-c('Alcohol','THC','Cocaine','Stimulants','Sedative.hypnotics',
+            'Opioids','Court.order','Education','Hx.of.Violence',
+            'Disorderly.Conduct','Suicide','Abuse','Non.subst.Dx',
+            'Subst.Dx','Psych.meds.')) %>%
+  rename_at(.vars = vars(ends_with('_imp')),.funs = funs(sub('_imp', '', .)))
+df_impute <- df_impute %>% select(-Psych.meds.) %>% 
+  relocate(Suicide, .before = Age)
+```
+```{r}
+impute <- mice(data = df_factors, print=FALSE)
+df_impute = complete(impute)
+```
+
+#### Feature Transformation
+
+Feature transformation begins by assessing the numeric features for possible power transformation. Below are skewness statistics for each feature, with negative values reflecting left skewness and positive values reflecting right skewness. Larger values are associated with greater levels of skewness. None of these features show skew large enough to warrant power transformation. These will, however, undergo centering and scaling to facilitate clustering, PCA, and SVM modeling.
+
+```{r skewness}
+kable(sapply(df_impute[c('Age','ADHD.Total','MD.TOTAL','ADHD_f1','ADHD_f2',
+                         'ADHD_f3','MD_f1','MD_f2','MD_f3')], skewness), 
+      col.names = c('Skewness'),
+      caption = 'Feature Skewness')  %>%
+  kable_styling(bootstrap_options = "striped", full_width = TRUE)
+```
+
+Most of the dataset's features are stored as factors and must be addressed before moving forward. The non-ordered categorical features (e.g., `Sex` and `Race`) are converted to sets of dummy variables, one dummy for each categorical level. By contrast, the ordered factors (e.g., `Alcohol` and `Education`) are converted to sets of polynomial scores. These scores capture the possible effects--linear, quadratic, cubic, etc.--that can be fit using the ordinal information in the original factor. Following factor conversion, the resulting set of features undergoes centering and scaling.
+
+```{r dummiescombos}
+set.seed(622)
+df_dummy <- dummyVars(Suicide~ ., data = df_impute)
+df_dummy <- data.frame(predict(df_dummy, newdata = df_impute))
+df_transform <- df_dummy %>% preProcess(method = c('center','scale')) %>% 
+  predict(df_dummy) %>% cbind(df_impute$Suicide) %>% 
+  rename(Suicide = 'df_impute$Suicide')
+```
+
+Lastly, the dataset is split 70/30 into a training set (n = 124) and a test set (n = 51). The latter will be held out for validation.
+
+```{r split}
+set.seed(622)
+index <- as.vector(createDataPartition(df_transform$Suicide, p = .70, list = FALSE))
+train <- df_transform[index,] # 124 observations
+test <- df_transform[-index,] # 51 observations
+```
+
+### Clustering of Patients
+
+Clustering is the partitioning of data into groups. This can be done in a number of ways, the two most popular being K-means and hierarchical clustering. In terms of a data.frame, a clustering algorithm finds out which rows are similar to each other. Rows that are grouped together are supposed to have high similarity to each other and low similarity with rows outside the grouping.
+
+K-means
+
+One of the more popular algorithms for clustering is K-means. It divides the observations into discrete groups based on some distance metric.
+
+1) Excluding Sex, Race, Age because it might be too correlated with group membership.
+
+2) K-means requires specification of the number of clusters. 
+
+#### Data Prep
+
+Initial is used to identify the individual in the study and is excluded as well.
+Age, Sex, and Race is excluded because it might be too correlated with group membership.
+
+```{r}
+cluster_df <- df %>% rename_all(make.names)
+#remove NA values
+sum(sapply(cluster_df , is.na))
+cluster_df <-na.omit(cluster_df )
+sum(sapply(cluster_df , is.na))
+
+sum(sapply(cluster_df , is.infinite))
+
+sum(sapply(cluster_df , is.nan))
+
+cluster_age <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Race"))]
+
+cluster_race <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Age"))]
+
+cluster_sex <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Race"))]
+
+
+
+cluster_df <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Sex", "Race"))]
+
+# View the first 5 rows of the data
+head(df, n = 5)
+
+```
+
+
+#### Hartigan's Rule
+
+Finding the right number of clusters is important in getting a good partitioning of the data. A good metric for determining the optimal number of clusters is Hartigan’s rule. It essentially compares the ratio of the within-cluster sum of squares for a clustering with k clusters and one with k + 1 clusters, accounting for the number of rows and clusters. If that number is greater than 10, then it is worth using k + 1 clusters. Fitting this repeatedly can be a chore and computationally inefficient if not done right. The useful package has the FitKMeans function for doing just that.
+
+The optimal cluster number to use is 3.
+
+```{r}
+best_cluster <- FitKMeans(cluster_df, max.clusters=20, nstart=25, seed=626)
+best_cluster
+```
+
+```{r}
+PlotHartigan(best_cluster)
+
+```
+
+The standard R function for k-means clustering is kmeans() [stats package], which simplified format is as follow:
+
+kmeans(x, centers, iter.max = 10, nstart = 1)
+
+x: numeric matrix, numeric data frame or a numeric vector
+
+centers: Possible values are the number of clusters (k) or a set of initial (distinct) cluster centers. If a number, a random set of (distinct) rows in x is chosen as the initial centers.
+
+iter.max: The maximum number of iterations allowed. Default value is 10.
+
+nstart: The number of random starting partitions when centers is a number. Trying nstart > 1 is often recommended.
+
+```{r}
+
+set.seed(626)
+km_res <- kmeans(cluster_df, 3, nstart = 25)
+```
+
+Using K-means clustering we get 3 clusters of sizes 22, 15, 18.
+
+
+```{r}
+print(km_res)
+
+```
+
+Compute the mean of each variables by clusters using the original data
+
+```{r}
+aggregate(cluster_df, by=list(cluster=km_res$cluster), mean)
+
+```
+
+Add the point classifications to the original data
+
+```{r}
+dd <- cbind(cluster_df, cluster = km_res$cluster)
+head(dd)
+
+```
+
+```{r}
+# Cluster number for each of the observations
+km_res$cluster
+```
+
+```{r}
+fviz_cluster(km_res, data = cluster_df,
+             ellipse.type = "convex",
+             palette = "jco",
+             ggtheme = theme_minimal())
+```
+
+
+Using the table function to see which age , race, and sex falls into cluster 1,2 or 3.
+
+```{r}
+table(cluster_age$Age, km_res$cluster)
+```
+
+```{r}
+table(cluster_race$Race, km_res$cluster)
+```
+
+```{r}
+table(cluster_sex$Sex, km_res$cluster)
+
+```
+
+#### Hierarchical clustering
+
+Hierarchical clustering is an alternative approach to partitioning clustering for identifying groups in the dataset. It does not require to pre-specify the number of clusters to be generated which k-means does.
+
+Hierarchical clustering provides a tree-based representation of the objects called a dendrogram. Observations can be further subdivided into groups by cutting the dendrogram at an another similarity level.
+
+
+```{r}
+# Compute hierarchical clustering
+df_hc <- cluster_df %>%
+  dist(method = "euclidean") %>% # Compute dissimilarity matrix
+  hclust(method = "ward.D2")     # Compute hierachical clustering
+
+# Visualize using factoextra
+# Cut in 3 groups and color by groups
+fviz_dend(df_hc, k = 3, # Cut in three groups
+          cex = 0.5, # label size
+          k_colors = c("#2E9FDF", "#00AFBB", "#E7B800", "#FC4E07"),
+          color_labels_by_k = TRUE, # color labels by groups
+          rect = TRUE # Add rectangle around groups
+          )
+
+```
+
+#### Clustering Conclusion
+
+Using the Hartigan's rule, 3 is the optimal number for the clusters. Using two different clustering methods, k-means and Hierarchical clustering to depict the different 3 clusters. Hierarchical clustering depicts the clusters with a dendrogram. Using the table function to show which age group, sex group , or race group belongs to which of the three cluster groups. 
+
+#### Sub
+
+### PCA
+
+Apart from the factor analysis, which can assist in the dimensional reduction of the dataset, another technique is Principal Component Analysis. PCA is a method that summarizes information in datasets which contain correlated numerical variables. Each feature is considered a dimension, and the goal of PCA is to reduce dimensionality while preserving the information contained in the original dataset. The resulting features (called principal components) are linear combinations of the original features and contain the maximum variation (information) in the dataset. 
+
+PCA is valuable because it can: (1) identify correlated variables and outliers, (2) discover hidden patterns and trends and (3) remove redundancy and noise. 
+
+Traditional PCA works with continuous, numerical features and creates a Pearson correlation matrix behind-the-scenes. Pearson correlations assume that all variables are normally distributed -- in other words, the variables are continuous, quantitative, symmetric, and bell shaped. In this case, although it can technically be applied to the raw data and get an output, most of the features are dichotomous (ie, binary) or ordinal, as a result, the output will not hold much meaning. 
+
+The alternative is to conduct PCA in relation to the polychoric correlation. These correlations assume that the variables are ordered measures of an underlying continuum, so there is no need to be continuous or symmetrical. Like a Pearson correlation, the values of a polychoric correlation range from -1 to 1 and the the value/sign measures the strength and direction of the relationship. 
+
+#### PCA - Dataset
+
+Broadly speaking, our base dataset contains 3 main categories of features (demographics, questionnaire responses, and drug use) and a few additional miscellaneous features. Off the bat, we'll eliminate the `Psych.meds` variable, because it has more than 50% of its values missing. We will also leave demographic information (`Age`, `Sex`, and `Race`) out of the PCA because we want to preserve these values. 
+
+The approach for this analysis will be to identify the optimal reductions by first performing PCA on the 2 questionnaire sets and drug variables independently and then on a combination of these categories and the remaining miscellaneous categories together. The independent PCA of questionnaire answers & drug variables assumes that the features within these categories are correlated, but that the categories are independent of one another. We will compare the results of these analyses to the final results with all variables included together. 
+
+PCA only works with non-null values, so any records that include missing values is dropped. Additionally, since the data dictionary indicates that ADHD questions should be on scale of 1-4, records in the dataset labeled '5' are eliminated, as this is likely a data-entry error. 
+
+```{r pca_base}
+pca_base <- df %>%
+  select(-Age, -Sex, -Race, -ADHD.Total, -MD.TOTAL, -Education, -Psych.meds.) %>%
+  filter(ADHD.Q5 != 5) %>%
+  drop_na()
+```
+
+The base dataset for the PCA includes `r nrow(pca_base)` rows and `r ncol(pca_base)-1` total features. 
+
+#### ADHD Questions
+
+Firstly, looking at the 18 unlabeled self-reported ADHD questions, polychoric correlation matrix is passed into the principal function to calculate the principal components. The components are arranged in descending order of contribution to variance, with RC1 explaining the largest variance and RC3 explaining the least amount of variance. Each component is a linear combination of the variables, and the resulting eigenvectors are the factors that the features need to be multiplied by for the final calculation of the component score for an observation. The resulting eigenvalues are the variances for each of the components. It can be visualize as percentages in a scree plot, as shown below
+
+```{r pca_adhd}
+df_adhd <- pca_base %>% 
+  select(starts_with('ADHD'), -Suicide) %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate_if(is.character, as.numeric)
+
+poly_adhd <- polychoric(df_adhd)
+adhd_rho <- poly_adhd$rho
+
+adhd_pca <- principal(r = adhd_rho, nfactors = 2, covar = TRUE, rotate="none")
+```
+
+```{r pca_adhd_scree}
+adhd_var <- adhd_pca$values/sum(adhd_pca$values)
+rounded_adhd_var <- round(adhd_var,2)
+
+p1 = qplot(c(1:length(adhd_pca$values)), adhd_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_adhd_var),hjust=0, vjust=-1) +
+  labs(x = "Principal Component", 
+       y = "Variance Explained",
+       title = "Scree Plot: PCA on ADHD Questions") +
+  ylim(0, 1)
+```
+
+The results shows that 65% of the variance is explained by principal components 1 and 2 alone. Since an SVM model is fitted to classify the `Suicide` variable, an investigation of any patterns between this variable and the first two principal components is carried out. By using the loadings matrix to calculate the final pca scores for each observation in the dataset, the below plot with respect to the `Suicide` variable can be used to identify any meaningful relationships. It is clear that there is still quite a bit of overlap between the two classes. 
+
+```{r, pca_adhd_final, fig.height=5}
+adhd_pca$scores <- factor.scores(df_adhd, adhd_pca) 
+df_adhd_final <- cbind(pca_base %>% select(Suicide), adhd_pca$scores$scores)
+
+p2 = ggplot(df_adhd_final, aes(PC1, PC2, col = Suicide, fill = Suicide)) +
+  stat_ellipse(geom = 'polygon', col = 'black', alpha = 0.5) +
+  geom_point(shape = 21, col = 'black')
+
+gridExtra::grid.arrange(p1,p2, nrow = 2)
+```
+
+Next, using a 90% coutoff, the total number of principal components that the data can be reduce to is determined. In other words, the number of components that make up 90% of the variability in the data is accepted. This threshold is identified by looking at a cumulative plot of the variances. 
+
+```{r pca_adhd_cumulative}
+adhd_cumulative_var <- cumsum(adhd_pca$values/sum(adhd_pca$values))
+rounded_adhd_cumulative_var <- round(adhd_cumulative_var,2)
+
+qplot(c(1:length(adhd_pca$values)), adhd_cumulative_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_adhd_cumulative_var),hjust=0, vjust=1) +
+  labs(x = "Principal Component", 
+       y = "Cumulative Variance Explained",
+       title = "Scree Plot: PCA on ADHD Questions") +
+  ylim(0, 1)
+```
+
+The final analysis shows that the number of ADHD features can be reduced to 9 principal components which retain 90% of the variability in the data. 
+
+#### Mood Disorder Questions 
+
+Taking a similar approach with the Mood Disorder questions, the polychoric correlation matrix is calculated and passed to the principal function. The scree plot highlights that 66% of the variance is explained by the first two principal components. 
+
+```{r pca_mood}
+df_mood <- pca_base %>% 
+  select(starts_with('MD'), -Suicide) %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate_if(is.character, as.numeric)
+
+poly_mood <- polychoric(df_mood)
+mood_rho <- poly_mood$rho
+
+mood_pca <- principal(r = mood_rho, nfactors = 2, covar = TRUE,  rotate="none")
+```
+
+```{r pca_mood_scree}
+mood_var <- mood_pca$values/sum(mood_pca$values)
+rounded_mood_var <- round(mood_var,2)
+
+p1 = qplot(c(1:length(mood_pca$values)), mood_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_mood_var),hjust=0, vjust=-1) +
+  labs(x = "Principal Component", 
+       y = "Variance Explained",
+       title = "Scree Plot: PCA on Mood Disorder Questions") +
+  ylim(0, 1)
+```
+
+Once again, take a look at these components with respect to the `Suicide` variable. There is still quite a bit of overlap, nonetheless there is some distinctions between the two classes (lower PC1 is more indicative of non-Suicide individuals).
+
+```{r, pca_mood_final, fig.height=5}
+mood_pca$scores <- factor.scores(df_mood,mood_pca) 
+df_mood_final <- cbind(pca_base %>% select(Suicide), mood_pca$scores$scores)
+
+p2 = ggplot(df_mood_final, aes(PC1, PC2, col = Suicide, fill = Suicide)) +
+  stat_ellipse(geom = 'polygon', col = 'black', alpha = 0.5) +
+  geom_point(shape = 21, col = 'black')
+
+gridExtra::grid.arrange(p1,p2, nrow = 2)
+```
+
+With the the 90% variability cutoff, the final analysis shows that the number of Mood Disorder features can be reduced to 7 principal components. 
+
+```{r pca_mood_cumulative}
+mood_cumulative_var <- cumsum(mood_pca$values/sum(mood_pca$values))
+rounded_mood_cumulative_var <- round(mood_cumulative_var,2)
+
+qplot(c(1:length(mood_pca$values)), mood_cumulative_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_mood_cumulative_var),hjust=0, vjust=1) +
+  labs(x = "Principal Component", 
+       y = "Cumulative Variance Explained",
+       title = "Scree Plot: PCA on Mood Disorder Questions") +
+  ylim(0, 1)
+```
+
+#### Drug Features
+
+Next, the drug features subset of data will include the following variables: `Alcohol`, `THC`, `Cocaine`, `Stimulants`, `Sedative.hypnotics`, `Opioids`, and `Subst.Dx`.
+
+```{r pca_drug}
+df_drug <- pca_base %>% 
+  select(Alcohol, THC, Cocaine, Stimulants, Sedative.hypnotics, Opioids, Subst.Dx) %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate_if(is.character, as.numeric)
+
+poly_drug <- polychoric(df_drug)
+drug_rho <- poly_drug$rho
+
+drug_pca <- principal(r = drug_rho, nfactors = 2, covar = TRUE, rotate= 'none')
+```
+
+The principal components derived from the drug features are a bit more balanced than the other two sets of features. The first component and second components only account for 34% and 24% (respectively) of the variability in the dataset. Nonetheless, it is visualized in order to compare the `Suicide` variable to see if any patterns can be identified. 
+
+```{r pca_drug_scree}
+drug_var <- drug_pca$values/sum(drug_pca$values)
+rounded_drug_var <- round(drug_var,2)
+
+p1= qplot(c(1:length(drug_pca$values)), drug_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_drug_var),hjust=0, vjust=-1) +
+  labs(x = "Principal Component", 
+       y = "Variance Explained",
+       title = "Scree Plot: PCA on Drug Features") +
+  ylim(0, 1)
+```
+```{r, pca_drug_final, fig.height=5}
+drug_pca$scores <- factor.scores(df_drug, drug_pca) 
+df_drug_final <- cbind(pca_base %>% select(Suicide), drug_pca$scores$scores)
+
+p2 = ggplot(df_drug_final, aes(PC1, PC2, col = Suicide, fill = Suicide)) +
+  stat_ellipse(geom = 'polygon', col = 'black', alpha = 0.5) +
+  geom_point(shape = 21, col = 'black')
+
+gridExtra::grid.arrange(p1,p2, nrow = 2)
+```
+
+The 0 class is embedded almost completely in the 1 class, so the first two components do not give as much insight as the other two categories of features. 
+
+```{r pca_drug_cumulative}
+drug_cumulative_var <- cumsum(drug_pca$values/sum(drug_pca$values))
+rounded_drug_cumulative_var <- round(drug_cumulative_var,2)
+
+qplot(c(1:length(drug_pca$values)), drug_cumulative_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_drug_cumulative_var),hjust=0, vjust=1) +
+  labs(x = "Principal Component", 
+       y = "Cumulative Variance Explained",
+       title = "Scree Plot: PCA on Drug Features") +
+  ylim(0, 1)
+```
+
+To meet the 90% threshold, 5 principal components will be needed. Since there are only 7 unique drug features, this reduction might not be as worth it to pursue. 
+
+#### All Numeric Features
+
+Lastly, PCA is used on all of the features combined. This approach assumes dependence of features across categories (questionnaires, drugs, and miscellaneous). 
+
+```{r pca_all}
+df_all <- pca_base %>% 
+  select(-Suicide, -Sedative.hypnotics) %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate_if(is.character, as.numeric)
+
+poly_all <- polychoric(df_all)
+all_rho <- poly_all$rho
+
+all_pca <- principal(r = all_rho, nfactors = 2, covar = TRUE, rotate = 'none')
+```
+
+The final scree plot shows that only about 40% of the variability is explained by the first two components. Despite this, the two components versus the `Suicide` variable highlights that the lower values of PC1 are associated with less suicides. 
+
+```{r pca_all_scree}
+all_var <- all_pca$values/sum(all_pca$values)
+rounded_all_var <- round(all_var,1)
+
+p1 = qplot(c(1:length(all_pca$values)), all_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_all_var),hjust=0, vjust=-1) +
+  labs(x = "Principal Component", 
+       y = "Variance Explained",
+       title = "Scree Plot: PCA on Selected Features") +
+  ylim(0, 1)
+```
+```{r, pca_all_final, fig.height=5}
+all_pca$scores <- factor.scores(df_all, all_pca) 
+df_all_final <- cbind(pca_base %>% select(Suicide), all_pca$scores$scores)
+
+p2 = ggplot(df_all_final, aes(PC1, PC2, col = Suicide, fill = Suicide)) +
+  stat_ellipse(geom = 'polygon', col = 'black', alpha = 0.5) +
+  geom_point(shape = 21, col = 'black')
+
+gridExtra::grid.arrange(p1,p2, nrow = 2)
+```
+
+One final cumulative scree plot suggest that to retain 90% of the variance in the dataset, 17 principal components should be kept. 
+
+```{r pca_all_cumulative_scree}
+all_cumulative_var <- cumsum(all_pca$values/sum(all_pca$values))
+rounded_all_cumulative_var <- round(all_cumulative_var,1)
+
+qplot(c(1:length(all_pca$values)), all_cumulative_var) + 
+  geom_line() + 
+  geom_text(aes(label=rounded_all_cumulative_var),hjust=0, vjust=1) +
+  labs(x = "Principal Component", 
+       y = "Cumulative Variance Explained",
+       title = "Scree Plot: PCA on Selected Features") +
+  ylim(0, 1)
+```
+
+#### PCA Conclusions
+
+By exploring the differences between completing PCA independently on the 3 categories of features (ADHD questionnaire, MD questionnaire, and drug features) and across all categories, it can established that: 
+
+* The ADHD question PCA analysis resulted in the first principal component accounting for almost 60% of the variance in the data. To retain 90% of the variance, 9 of the principal components should be kept. This results in a reduction of ADHD features by 50%. 
+* The Mood disorder question PCA analysis resulted in the first principal component accounting for 53% of the variance in the data. When visualizing this against the `Suicide` feature, there is evidence of some separation of the 2 classes based on the first two components alone. To retain 90% of the variance, 7 of the principal components are needed. This results in a reduction of Mood Disorder Features by a little over 50%. 
+* The drug feature PCA analysis resulted in the first principal component accounting for about 34% of the variance in the data. To retain 90% of the variance, 5 of the principal components should be kept. However, since there are only 7 drug features in the dataset, this reduction might not be necessary. 
+* The final PCA analysis with all features resulted in the first principal component accounting for 30% of the variance in the data. To retain 90% of the variance, 17 principal components are needed. 
+
+### Suicide Predictions using SVM
+
+#### Sub
+
+### Works Cited
+
+* Gravetter, Frederick J, and Larry B. Wallnau. Statistics for the Behavioral Sciences. , 2013. Print.
+* Kuhn, M. (2019). *The caret package*. Accessed April 21, 2021, from https://topepo.github.io/caret/.
+* Kuhn, M., and Johnson, K. (2013). *The basics of encoding categorical data for predictive models*. Applied Predictive Modeling. Accessed April 21, 2021 from http://appliedpredictivemodeling.com/blog/2013/10/23/the-basics-of-encoding-categorical-data-for-predictive-models.
+
+“Clustering in R.” Data Science Blog by Domino, 31 Mar. 2021, blog.dominodatalab.com/clustering-in-r/. 
+
+Alboukadel, et al. “5 Amazing Types of Clustering Methods You Should Know.” Datanovia, 25 Dec. 2019, www.datanovia.com/en/blog/types-of-clustering-methods-overview-and-quick-start-r-code/. 
+
+### Code Appendix
+
+The code chunks below represent the R code called in order during the analysis. These are reproduced in the appendix for review and comment.
+
+```{r appendix, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, eval=FALSE)
+```
+
+```{r load}
+```
+```{r initproc}
+```
+```{r ADHDcrosstabs}
+```
+```{r MDcrosstabs}
+```
+```{r suicide_sex, fig.height=3.5}
+```
+```{r suicide_race, fig.height=3.5}
+```
+```{r suicide_education, fig.height=3}
+```
+```{r suicide_abuse, fig.height=3.7}
+```
+```{r suicide_numerics, fig.height=5.5}
+```
+```{r suicide_feature1, eval=FALSE, fig.height=5.5, include=FALSE}
+```
+```{r suicide_feature2, eval=FALSE, fig.height=5.5, include=FALSE}
+```
+```{r suicide_feature3, eval=FALSE, fig.height=5.5, include=FALSE}
+```
+```{r Cronbach.ADHD}
+```
+```{r Cronbach.MD}
+```
+```{r fa.ADHD}
+```
+```{r fa.ADHD.plot1}
+```
+```{r fa.ADHD.plot2, fig.height=6}
+```
+```{r fa.MD}
+```
+```{r fa.MD.plot1}
+```
+```{r fa.MD.plot2, fig.height=6}
+```
+```{r factorscores}
+```
+```{r missing}
+```
+```{r imputation, eval=FALSE, include=FALSE}
+```
+```{r skewness}
+```
+```{r dummiescombos}
+```
+```{r split}
+```
+
+```{r pca_base}
+```
+```{r pca_adhd}
+```
+```{r pca_adhd_scree}
+```
+```{r, pca_adhd_final, fig.height=5}
+```
+```{r pca_adhd_cumulative}
+```
+```{r pca_mood}
+```
+```{r pca_mood_scree}
+```
+```{r, pca_mood_final, fig.height=5}
+```
+```{r pca_mood_cumulative}
+```
+```{r pca_drug}
+```
+```{r pca_drug_scree}
+```
+```{r, pca_drug_final, fig.height=5}
+```
+```{r pca_drug_cumulative}
+```
+```{r pca_all}
+```
+```{r pca_all_scree}
+```
+```{r, pca_all_final, fig.height=5}
+```
+```{r pca_all_cumulative_scree}
+```
