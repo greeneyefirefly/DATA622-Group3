@@ -31,6 +31,9 @@ library(caret)
 library(psych)
 library(VIM)
 library(mice)
+library(useful) # FitKMeans function for clustering
+library(cluster)
+library(factoextra)
 ```
 
 ## Overview {.tabset .tabset-fade .tabset.-pills}
@@ -534,6 +537,161 @@ test <- df_transform[-index,] # 51 observations
 
 ### Clustering of Patients
 
+Clustering is the partitioning of data into groups. This can be done in a number of ways, the two most popular being K-means and hierarchical clustering. In terms of a data.frame, a clustering algorithm finds out which rows are similar to each other. Rows that are grouped together are supposed to have high similarity to each other and low similarity with rows outside the grouping.
+
+K-means
+
+One of the more popular algorithms for clustering is K-means. It divides the observations into discrete groups based on some distance metric.
+
+1) Excluding Sex, Race, Age because it might be too correlated with group membership.
+
+2) K-means requires specification of the number of clusters. 
+
+#### Data Prep
+
+Initial is used to identify the individual in the study and is excluded as well.
+Age, Sex, and Race is excluded because it might be too correlated with group membership.
+
+```{r}
+cluster_df <- df %>% rename_all(make.names)
+#remove NA values
+sum(sapply(cluster_df , is.na))
+cluster_df <-na.omit(cluster_df )
+sum(sapply(cluster_df , is.na))
+
+sum(sapply(cluster_df , is.infinite))
+
+sum(sapply(cluster_df , is.nan))
+
+cluster_age <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Race"))]
+
+cluster_race <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Age"))]
+
+cluster_sex <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Race"))]
+
+
+
+cluster_df <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Sex", "Race"))]
+
+# View the first 5 rows of the data
+head(df, n = 5)
+
+```
+
+
+#### Hartigan's Rule
+
+Finding the right number of clusters is important in getting a good partitioning of the data. A good metric for determining the optimal number of clusters is Hartigan’s rule. It essentially compares the ratio of the within-cluster sum of squares for a clustering with k clusters and one with k + 1 clusters, accounting for the number of rows and clusters. If that number is greater than 10, then it is worth using k + 1 clusters. Fitting this repeatedly can be a chore and computationally inefficient if not done right. The useful package has the FitKMeans function for doing just that.
+
+The optimal cluster number to use is 3.
+
+```{r}
+best_cluster <- FitKMeans(cluster_df, max.clusters=20, nstart=25, seed=626)
+best_cluster
+```
+
+```{r}
+PlotHartigan(best_cluster)
+
+```
+
+The standard R function for k-means clustering is kmeans() [stats package], which simplified format is as follow:
+
+kmeans(x, centers, iter.max = 10, nstart = 1)
+
+x: numeric matrix, numeric data frame or a numeric vector
+
+centers: Possible values are the number of clusters (k) or a set of initial (distinct) cluster centers. If a number, a random set of (distinct) rows in x is chosen as the initial centers.
+
+iter.max: The maximum number of iterations allowed. Default value is 10.
+
+nstart: The number of random starting partitions when centers is a number. Trying nstart > 1 is often recommended.
+
+```{r}
+
+set.seed(626)
+km_res <- kmeans(cluster_df, 3, nstart = 25)
+```
+
+Using K-means clustering we get 3 clusters of sizes 22, 15, 18.
+
+
+```{r}
+print(km_res)
+
+```
+
+Compute the mean of each variables by clusters using the original data
+
+```{r}
+aggregate(cluster_df, by=list(cluster=km_res$cluster), mean)
+
+```
+
+Add the point classifications to the original data
+
+```{r}
+dd <- cbind(cluster_df, cluster = km_res$cluster)
+head(dd)
+
+```
+
+```{r}
+# Cluster number for each of the observations
+km_res$cluster
+```
+
+```{r}
+fviz_cluster(km_res, data = cluster_df,
+             ellipse.type = "convex",
+             palette = "jco",
+             ggtheme = theme_minimal())
+```
+
+
+Using the table function to see which age , race, and sex falls into cluster 1,2 or 3.
+
+```{r}
+table(cluster_age$Age, km_res$cluster)
+```
+
+```{r}
+table(cluster_race$Race, km_res$cluster)
+```
+
+```{r}
+table(cluster_sex$Sex, km_res$cluster)
+
+```
+
+#### Hierarchical clustering
+
+Hierarchical clustering is an alternative approach to partitioning clustering for identifying groups in the dataset. It does not require to pre-specify the number of clusters to be generated which k-means does.
+
+Hierarchical clustering provides a tree-based representation of the objects called a dendrogram. Observations can be further subdivided into groups by cutting the dendrogram at an another similarity level.
+
+
+```{r}
+# Compute hierarchical clustering
+df_hc <- cluster_df %>%
+  dist(method = "euclidean") %>% # Compute dissimilarity matrix
+  hclust(method = "ward.D2")     # Compute hierachical clustering
+
+# Visualize using factoextra
+# Cut in 3 groups and color by groups
+fviz_dend(df_hc, k = 3, # Cut in three groups
+          cex = 0.5, # label size
+          k_colors = c("#2E9FDF", "#00AFBB", "#E7B800", "#FC4E07"),
+          color_labels_by_k = TRUE, # color labels by groups
+          rect = TRUE # Add rectangle around groups
+          )
+
+```
+
+#### Clustering Conclusion
+
+Using the Hartigan's rule, 3 is the optimal number for the clusters. Using two different clustering methods, k-means and Hierarchical clustering to depict the different 3 clusters. Hierarchical clustering depicts the clusters with a dendrogram. Using the table function to show which age group, sex group , or race group belongs to which of the three cluster groups. 
+
 #### Sub
 
 ### PCA
@@ -811,6 +969,10 @@ By exploring the differences between completing PCA independently on the 3 categ
 * Gravetter, Frederick J, and Larry B. Wallnau. Statistics for the Behavioral Sciences. , 2013. Print.
 * Kuhn, M. (2019). *The caret package*. Accessed April 21, 2021, from https://topepo.github.io/caret/.
 * Kuhn, M., and Johnson, K. (2013). *The basics of encoding categorical data for predictive models*. Applied Predictive Modeling. Accessed April 21, 2021 from http://appliedpredictivemodeling.com/blog/2013/10/23/the-basics-of-encoding-categorical-data-for-predictive-models.
+
+“Clustering in R.” Data Science Blog by Domino, 31 Mar. 2021, blog.dominodatalab.com/clustering-in-r/. 
+
+Alboukadel, et al. “5 Amazing Types of Clustering Methods You Should Know.” Datanovia, 25 Dec. 2019, www.datanovia.com/en/blog/types-of-clustering-methods-overview-and-quick-start-r-code/. 
 
 ### Code Appendix
 
