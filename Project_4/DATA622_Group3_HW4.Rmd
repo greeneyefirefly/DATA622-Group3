@@ -944,8 +944,7 @@ For the drug features and the all features dataset the data will be imputed, the
 
 
 ```{r message=FALSE, warning=FALSE, include=FALSE}
-df_trans<- df%>%
-  select(-Psych.meds.)
+df_trans<- df
 imputed <- mice(data = df_trans)
 traindfimp = complete(imputed)
 ```
