@@ -925,6 +925,731 @@ By exploring the differences between completing PCA independently on the 3 categ
 
 ### Suicide Predictions using SVM
 
+SVM is a supervised machine learning algorithm that can be used for classification or regression problems. Kernel is the technique used to transform ones data and then based on these transformations an optimal boundary is then found between the possible outputs. The data transformations are pretty complex, then seperates your data based on the labels or outputs that have been defined. 
+
+SVM can be run using the e1071 package or the caret package. In the e1071 package the kernals are Linear, Radial, Polynomial or Sigimoid. In the caret package the kernals are listed as svmLinear(for linear values), svmRadial(for non linear), and svmPoly(for nonlinear). When it is run within the svm function the kernals are listed differently in the in the e1071 it is listed under kernal, while in the caret package it is listed under method. 
+
+For the purpose of this project the caret package will be used to obtain the svm values. svmLinear, svmRadial, and svmPoly will be used to see which one has the best outcome. 
+
+
+### SVM Dataset
+
+The data that will be used is the train and test set that was already created. Since the data was converted to include dummy variables for optimization.Some features of the train and set data will be removed in order to decrease the size of the data. The features that will be removed are 'Race', 'Sex', 'Age', because it may be highly correlated. 'Education' will also be removed since it is also demographic. As well as 'Psych.meds' will not  be used since it only 50% of data in the original data. 
+
+The features will be separated based on the features that is based on the PCA analysis to see if it will have the same outcome. Boruta would be used as well in order to determine the best features for the data. This will only be used for the drug feature and for all features. Since feature importance will be used for the drug features and all features another dataset will be created for the feature selection since it won't make sense to do feature selection using Boruta with dummy variables. But for both datasets the same features will be removed. 
+
+For the drug features and the all features dataset the data will be imputed, then the data will be split. 
+
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+df_trans<- df%>%
+  select(-Psych.meds.)
+imputed <- mice(data = df_trans)
+traindfimp = complete(imputed)
+```
+
+
+```{r}
+set.seed(622)
+index <- as.vector(createDataPartition(traindfimp$Suicide, p = .70, list = FALSE))
+svm_train <- traindfimp[index,] # 124 observations
+svm_test <- traindfimp[-index,] # 51 observations
+```
+
+
+```{r svm_base}
+svm_train <- svm_train %>%
+  select(-Age, -Sex, -Race, -ADHD.Total, -MD.TOTAL, -Education, -Psych.meds.) %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate_if(is.character, as.numeric)
+
+
+svm_test <- svm_test %>%
+  select(-Age, -Sex, -Race, -ADHD.Total, -MD.TOTAL, -Education, -Psych.meds.) %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate_if(is.character, as.numeric)%>%
+  drop_na()
+
+ 
+svm_train$Suicide<-as.factor(svm_train$Suicide)
+svm_test$Suicide<-as.factor(svm_test$Suicide)
+
+```
+
+
+
+```{r svm data prep}
+svm_train2<- train%>%
+  select(-Race.1,-Race.2,-Race.3, -Race.6, -Age, -Sex.1,-Sex.2,-ADHD.Total, -MD.TOTAL, -starts_with('Education'), -Psych.meds..L, -Psych.meds..Q)
+
+
+svm_test2<- test%>%
+   select(-Race.1,-Race.2,-Race.3, -Race.6, -Age, -Sex.1,-Sex.2,-ADHD.Total, -MD.TOTAL, -starts_with('Education'), -Psych.meds..L, -Psych.meds..Q)
+
+```
+
+
+
+
+### Drug Features 
+
+
+A seperate dataset is created in order to single out the the drug features.   
+
+```{r}
+drugs_df<-svm_train%>%
+    select(Alcohol, THC, Cocaine, Stimulants, Sedative.hypnotics, Opioids, Subst.Dx, Suicide) 
+```
+
+
+This dataset includes "Alcohol.","THC.", "Subst.Dx.", "Cocaine", "Stimulants.","Sedative.hypnotics.", "Opioids", along with all of the dummy variables, and Suicide which is the deciding factor. 
+
+
+#### Drug Feature Importance 
+
+```{r drugboruta, message=FALSE, warning=FALSE}
+set.seed(525)
+library(Boruta)
+output = Boruta(drugs_df$Suicide ~ ., data = drugs_df, doTrace = 0)  
+roughFixMod = TentativeRoughFix(output)
+importance = attStats(TentativeRoughFix(output))
+importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
+kable(head(importance[order(-importance$meanImp), ]), 
+      caption = "Feature Importance of Drugs Data") %>%
+  kable_styling(bootstrap_options = "striped", full_width = TRUE)
+```
+
+
+Only one was considered to be important, which is 'Alcohol'.
+
+
+#### svmLinear for Drugs Features
+
+The caret package will be used for all of the models and it will include a preprocess function which will be centered and scaled. 
+
+```{r}
+set.seed(123)
+drugs_model <- train(
+  Suicide ~., data = drugs_df, method = "svmLinear",
+  tuneLength = 5,
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+
+drugs_model_imp = train(Suicide ~.,
+                 data=drugs_df,
+                 method = "svmLinear",
+                 metric = "Accuracy",
+                 trControl = trainControl(method = "repeatedcv",
+                                          number = 10, 
+                                          repeats = 3, 
+                                          allowParallel = TRUE))
+```
+
+
+```{r}  
+drug_pred <-predict(drugs_model, svm_test)
+
+confusionMatrix(table(drug_pred, svm_test$Suicide))
+
+pCol <- c("#37004D", '#ff8301', '#bf5ccb')
+svm_test1<-svm_test
+svm_test1$drug_pred<- drug_pred
+
+ggplot(svm_test1, aes(x = Suicide, y = drug_pred, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+
+Accuracy for this seems pretty low, but how does it compare to the others.
+
+
+### svmRadial 
+
+
+
+```{r}
+set.seed(123)
+drugs_model_rad <- train(
+  Suicide ~ Opioids + Cocaine, data = drugs_df, method = "svmRadial",
+  tuneLength = 5,
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+
+
+model_imp = train(Suicide ~.,
+                 data=drugs_df,
+                 method = "svmRadial",
+                 metric = "Accuracy",
+                 trControl = trainControl(method = "repeatedcv",
+                                          number = 10, 
+                                          repeats = 3, 
+                                          allowParallel = TRUE))
+
+
+drug_pred_rad <-predict(drugs_model_rad, svm_test)
+
+confusionMatrix(table(drug_pred_rad, svm_test$Suicide))
+
+
+svm_test1$drug_pred_rad<- drug_pred_rad
+
+ggplot(svm_test1, aes(x = Suicide, y = drug_pred_rad, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+
+This one is actually less than the previous one.  
+
+
+### svmPoly
+
+Prediction
+
+```{r}
+set.seed(123)
+drugs_model_poly <- train(
+  Suicide ~Opioids + Cocaine, data = drugs_df, method = "svmPoly",
+  tuneLength = 5,
+  metric="Accuracy",
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+
+drugs_model_poly = train(Suicide ~.,
+                 data=drugs_df,
+                 method = "svmPoly",
+                 metric = "Accuracy",
+                 trControl = trainControl(method = "repeatedcv",
+                                          number = 10, 
+                                          repeats = 3, 
+                                          allowParallel = TRUE))
+```
+
+
+Plot prediction
+
+```{r}
+drug_pred_poly <-predict(drugs_model_poly, svm_test)
+
+confusionMatrix(table(drug_pred_poly, svm_test$Suicide))
+
+
+svm_test1$drug_pred_poly<- drug_pred_poly
+
+ggplot(svm_test1, aes(x = Suicide, y = drug_pred_poly, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+
+
+svmPoly ends up being the same as svmRadial. So svmLinear gave the best prediction. Since svmLinear gave a higher prediction the tune function can be used to see if a better outcome is given. 
+
+
+### svmLinear Tuned Drugs
+
+Plot model accuracy vs different values of Cost
+
+```{r}
+set.seed(123)
+drugs_tuned <- train(
+  Suicide ~. , data = drugs_df, method = "svmLinear",
+  trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(C = seq(0, 2, length = 20)),
+  preProcess = c("center","scale")
+  )
+# Plot model accuracy vs different values of Cost
+plot(drugs_tuned)
+```
+
+
+Best tuning parameter C
+
+```{r}
+drugs_tuned$bestTune
+```
+
+The tuning of drug features did not give the best outcome its about the same as the svmLinear. 
+
+```{r}
+# Make predictions on the test data
+predicted.classes <- drugs_tuned %>% predict(svm_test)
+# Compute model accuracy rate
+mean(predicted.classes == svm_test$Suicide)
+```
+
+The tuning of drug features gave the same prediction as the svmLinear.  
+
+
+## ADHD Questions 
+
+The orignal train data with the tranformations is used for this one since the ADHD questions was condensed to three. 
+
+
+```{r}
+ADHD_df<-svm_train2 %>%
+  select(starts_with("ADHD_"), Suicide)
+```
+
+
+### svmLinear
+
+Prediction for svmLinear
+
+```{r}
+set.seed(123)
+ADHD_model <- train(
+  Suicide ~., data = ADHD_df, method = "svmLinear",
+   tuneLength = 14,
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+
+ADHD_pred <-predict(ADHD_model, svm_test2)
+
+confusionMatrix(table(ADHD_pred, svm_test2$Suicide))
+```
+
+
+Plot Prediction
+
+```{r}
+pCol <- c( '#ff8301', '#bf5ccb')
+svm_test3<-svm_test2
+svm_test3$ADHD_pred<- ADHD_pred
+
+ggplot(svm_test3, aes(x = Suicide, y = ADHD_pred, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+
+
+This seems to be better in comparison to the svmLiner in the drug feature. Lets see how svmRadial is in comparison. 
+
+
+
+### svmRadial 
+
+Prediction for svmRadial
+
+```{r}
+set.seed(123)
+ADHD_model_rad <- train(
+  Suicide ~., data = ADHD_df, method = "svmRadial",
+   tuneLength = 14,
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+ADHD_pred_rad <-predict(ADHD_model_rad, svm_test2)
+
+confusionMatrix(table(ADHD_pred_rad, svm_test2$Suicide))
+```
+
+
+Plot prediction
+
+```{r}
+
+svm_test3$ADHD_pred_rad<- ADHD_pred_rad
+
+ggplot(svm_test3, aes(x = Suicide, y = ADHD_pred_rad, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+The prediction for svmRadial is worse than the svmLinear. 
+
+
+### svmPoly
+
+Prediction for svmPoly
+
+```{r}
+set.seed(123)
+ADHD_model_poly <- train(
+  Suicide ~., data = ADHD_df, method = "svmPoly",
+   tuneLength = 5,
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+
+ADHD_pred_poly <-predict(ADHD_model_poly, svm_test2)
+
+confusionMatrix(table(ADHD_pred_poly, svm_test2$Suicide))
+```
+
+
+Plot prediction
+
+```{r}
+svm_test3$ADHD_pred_poly<- ADHD_pred_poly
+
+ggplot(svm_test3, aes(x = Suicide, y = ADHD_pred_poly, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+
+svmPoly was better than svmRadial but it was not better than svmLiner. Since svmLinear was the best model the svmLinear model can be tuned for a better outcome. 
+
+
+### svmLinear Tuned ADHD
+
+Plot model accuracy vs different values of Cost
+
+```{r}
+set.seed(123)
+ADHD_tuned <- train(
+  Suicide ~. , data = ADHD_df, method = "svmLinear",
+  trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(C = seq(0, 2, length = 20)),
+  preProcess = c("center","scale")
+  )
+# Plot model accuracy vs different values of Cost
+plot(ADHD_tuned)
+```
+
+
+Best tuning parameter C
+
+
+```{r}
+drugs_tuned$bestTune
+```
+
+The tuning of drug features did not give the best outcome its about the same as the svmLinear. 
+
+```{r}
+# Make predictions on the test data
+predicted.classes <- drugs_tuned %>% predict(svm_test)
+# Compute model accuracy rate
+mean(predicted.classes == svm_test$Suicide)
+```
+
+
+
+## MD Questions 
+
+Like the ADHD the orignal train data with the tranformations will be used for this one since the MD questions was condensed to three. 
+
+
+```{r}
+MD_df<-svm_train2%>%
+  select(starts_with("MD_"), Suicide)
+```
+
+
+## svmLinear 
+
+Prediction for svmLinear
+
+
+```{r}
+set.seed(123)
+MD_model <- train(
+  Suicide ~., data = MD_df, method = "svmLinear",
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+
+MD_pred <-predict(MD_model, svm_test2)
+
+confusionMatrix(table(MD_pred, svm_test2$Suicide))
+```
+
+
+Plot prediction. 
+
+
+```{r}
+pCol <- c( '#ff8301', '#bf5ccb')
+svm_test3<-svm_test2
+svm_test3$MD_pred<- MD_pred
+
+ggplot(svm_test3, aes(x = Suicide, y = MD_pred, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+The prediction for this svmLinear is less than the drug feature, but about the same as the ADHD one.
+
+
+### svmRadial
+
+Prediction for svmRadial
+
+```{r}
+set.seed(123)
+MD_model_rad <- train(
+  Suicide ~., data = MD_df, method = "svmRadial",
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+
+MD_pred_rad <-predict(MD_model_rad, svm_test2)
+
+confusionMatrix(table(MD_pred_rad, svm_test2$Suicide))
+```
+
+
+Plot prediction.
+
+```{r}
+svm_test3$MD_pred_rad<- MD_pred_rad
+
+ggplot(svm_test3, aes(x = Suicide, y = MD_pred_rad, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+This is the same as the svmLinear. 
+
+
+### svmPoly
+
+Plot prediction for svmPoly
+
+```{r}
+set.seed(123)
+MD_model_poly <- train(
+  Suicide ~., data = MD_df, method = "svmPoly",
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+
+MD_pred_poly <-predict(MD_model_poly, svm_test2)
+
+confusionMatrix(table(MD_pred_poly, svm_test2$Suicide))
+```
+
+
+Plot Prediction. 
+
+
+```{r}
+svm_test3$MD_pred_poly<- MD_pred_poly
+
+ggplot(svm_test1, aes(x = Suicide, y = MD_pred_poly, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+
+This is the same as the svmLinear and svmPoly. 
+
+
+### All Features 
+
+All of the features will be used for these models. 
+
+
+#### Most Important feature 
+
+```{r boruta, message=FALSE, warning=FALSE}
+set.seed(525)
+library(Boruta)
+output = Boruta(svm_train$Suicide ~ ., data = svm_train, doTrace = 0)  
+roughFixMod = TentativeRoughFix(output)
+importance = attStats(TentativeRoughFix(output))
+importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
+kable(head(importance[order(-importance$meanImp), ]), 
+      caption = "Feature Importance of all of the Features") %>%
+  kable_styling(bootstrap_options = "striped", full_width = TRUE)
+```
+
+
+The most important was 'Abuse', and the others are not as important. 
+
+
+### svmLinear
+
+Prediction for svmLinear
+
+
+```{r}
+set.seed(123)
+all_model <- train(
+  Suicide ~., data = svm_train, method = "svmLinear",
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+
+all_model_imp = train(Suicide ~.,
+                 data=drugs_df,
+                 method = "svmLinear",
+                 metric = "Accuracy",
+                 trControl = trainControl(method = "repeatedcv",
+                                          number = 10, 
+                                          repeats = 3, 
+                                          allowParallel = TRUE))
+
+all_pred <-predict(all_model, svm_test)
+
+confusionMatrix(table(all_pred, svm_test$Suicide))
+
+```
+
+
+Plot prediction
+
+
+```{r}
+pCol <- c( '#ff8301', '#bf5ccb')
+
+svm_test1$drug_pred<- ADHD_pred
+
+ggplot(svm_test1, aes(x = Suicide, y = ADHD_pred, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+
+This svmLiear is actually the worse our of all of them. 
+
+
+### svmRadial
+
+Prediction of svmRadial 
+
+```{r}
+set.seed(123)
+all_model_rad <- train(
+  Suicide ~., data = svm_train, method = "svmRadial",
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+
+all_model_imp_rad = train(Suicide ~.,
+                 data=drugs_df,
+                 method = "svmRadial",
+                 metric = "Accuracy",
+                 trControl = trainControl(method = "repeatedcv",
+                                          number = 10, 
+                                          repeats = 3, 
+                                          allowParallel = TRUE))
+
+all_pred_rad <-predict(all_model_rad, svm_test)
+
+confusionMatrix(table(all_pred_rad, svm_test$Suicide))
+
+```
+
+Plot prediction
+
+
+```{r}
+svm_test1$all_pred_rad<- all_pred_rad
+
+ggplot(svm_test1, aes(x = Suicide, y = all_pred_rad, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+
+So far svmRadial gives the best result for all of the features. 
+
+
+### svmPoly 
+
+Prediction for svmPoly
+
+```{r}
+set.seed(123)
+all_model_poly <- train(
+  Suicide ~., data = svm_train, method = "svmPoly",
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale")
+  )
+
+all_model_imp_poly = train(Suicide ~.,
+                 data=drugs_df,
+                 method = "svmPoly",
+                 metric = "Accuracy",
+                 trControl = trainControl(method = "repeatedcv",
+                                          number = 10, 
+                                          repeats = 3, 
+                                          allowParallel = TRUE))
+
+all_pred_poly <-predict(all_model_poly, svm_test)
+
+confusionMatrix(table(all_pred_poly, svm_test$Suicide))
+```
+
+
+Plot prediction 
+
+
+```{r}
+svm_test1$all_pred_poly<- all_pred_poly
+
+ggplot(svm_test1, aes(x = Suicide, y = all_pred_poly, color = Suicide)) +
+  geom_jitter(size = 3) +
+  scale_color_manual(values = pCol)
+```
+
+
+svmPoly gave the best prediction results out of all of them. Since svmLinear was so low, svmLinear will be tuned to see if it has a better outcome. 
+
+
+
+### svmLinear Tuned All Features
+
+
+Plot model accuracy vs different values of Cost
+
+
+```{r}
+set.seed(123)
+aamodel <- train(
+  Suicide ~., data = svm_train, method = "svmLinear",
+  trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(C = seq(0, 2, length = 20)),
+  preProcess = c("center","scale")
+  )
+# Plot model accuracy vs different values of Cost
+plot(aamodel)
+```
+
+
+Best tuning parameter C
+
+
+```{r}
+aamodel$bestTune
+```
+
+
+```{r}
+all_pred_best <-predict(aamodel, svm_test)
+
+confusionMatrix(table(all_pred_best, svm_test$Suicide))
+```
+
+The tuneing for svmLinear did not change the prediction it is still the same as the other svmLinear. 
+
+
+##### Conclusion
+
+The features of models were split up as the same based on the results of the PCA analysis, so the data was separated by the drug features, ADHD condensed questions, MD condensed questions and all of the features which included everything. 
+
+The drug feature models: For the drug feature models the svmLinear turned out to give the best prediction. With that outcome it seems like the drug feature is Linear. 
+
+The ADHD Questions: The model that gave the best prediction was the svmLinear, and with that outcome it seems like it is linear. 
+
+The MD Questions: Based on what was run all of the models gave the same outcome, so it is not know if the features are more linear or non linear. 
+
+All Features: The one with all of the features had a completely different outcome in comparison to all of the models. The svmLinear gave the worst outcome, and the svmRadial and the svmPoly gave better predictions. Out of all of them svmPoly was the best. With this outcome it seems like the All Features models are more non linear. 
+
+As the PCA model the drug features gave a better outcome compared to the ADHD questions and MD questions, but the All Features model was better in comparison to the PCA analysis. 
+
+
 #### Sub
 
 ### Works Cited
