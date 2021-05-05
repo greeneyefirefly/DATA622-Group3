@@ -459,6 +459,7 @@ loads <- factoranalysis2$loadings
 fa.diagram(loads)
 ```
 
+
 Observation-specific factor scores are calculated for each of the six found factors--three for the ADHD features and three for the MD features--using Thomson's regression method. These scores are then combined with the larger data set, replacing the specific question features.
 
 ```{r factorscores}
@@ -537,148 +538,105 @@ test <- df_transform[-index,] # 51 observations
 
 ### Clustering of Patients
 
-Clustering is the partitioning of data into groups. This can be done in a number of ways, the two most popular being K-means and hierarchical clustering. In terms of a data.frame, a clustering algorithm finds out which rows are similar to each other. Rows that are grouped together are supposed to have high similarity to each other and low similarity with rows outside the grouping.
+Clustering is the partitioning of data into groups. This can be done in a number of ways, the two most popular being K-means and hierarchical clustering. In terms of a data frame, a clustering algorithm finds out which rows are similar to each other. Rows that are grouped together have high similarity to each other and low similarity to rows outside the grouping.
 
-K-means
-
-One of the more popular algorithms for clustering is K-means. It divides the observations into discrete groups based on some distance metric.
-
-1) Excluding Sex, Race, Age because it might be too correlated with group membership.
-
-2) K-means requires specification of the number of clusters. 
 
 #### Data Prep
+Sex, race, and age are excluded from the clustering analysis as they could be correlated with group membership. The `Psych.meds` variable is also excluded, as it is more than 50% empty. Finally, any records containing null values are omitted from the dataset. 
 
-Initial is used to identify the individual in the study and is excluded as well.
-Age, Sex, and Race is excluded because it might be too correlated with group membership.
+```{r, kmeans_prep}
+cluster_df <- df %>% 
+  select(-Psych.meds.) %>%
+  rename_all(make.names)
 
-```{r}
-cluster_df <- df %>% rename_all(make.names)
 #remove NA values
-sum(sapply(cluster_df , is.na))
-cluster_df <-na.omit(cluster_df )
-sum(sapply(cluster_df , is.na))
+#sum(sapply(cluster_df , is.na))
+cluster_df <-na.omit(cluster_df)
+#sum(sapply(cluster_df , is.na))
+#sum(sapply(cluster_df , is.infinite))
+#sum(sapply(cluster_df , is.nan))
 
-sum(sapply(cluster_df , is.infinite))
-
-sum(sapply(cluster_df , is.nan))
-
-# Make 3 dataframe with just age, race , sex so we can use the table function to see how the datapoints fall into each cluster.
+# Make 3 dataframes with just age, race, sex so we can use the table function to see how the datapoints fall into each cluster.
 cluster_age <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Race"))]
-
 cluster_race <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Age"))]
-
 cluster_sex <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Race"))]
-
-
-
 cluster_df <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Sex", "Race"))]
-
-# View the first 5 rows of the data
-head(df, n = 5)
-
 ```
 
+The final dataset for the clustering analysis has `r nrow(cluster_df)` rows and `r ncol(cluster_df)` columns. 
+
+#### K-means Clustering
+
+One of the more popular algorithms for clustering is K-means. It divides the observations into predefined, discrete groups based on some distance metric.
 
 #### Hartigan's Rule
 
 Finding the right number of clusters is important in getting a good partitioning of the data. A good metric for determining the optimal number of clusters is Hartigan’s rule. It essentially compares the ratio of the within-cluster sum of squares for a clustering with k clusters and one with k + 1 clusters, accounting for the number of rows and clusters. If that number is greater than 10, then it is worth using k + 1 clusters. Fitting this repeatedly can be a chore and computationally inefficient if not done right. The useful package has the FitKMeans function for doing just that.
 
-The optimal cluster number to use is 3.
+The Hartigan plot shows that the optimal cluster number to use is 3.
 
-```{r}
+```{r, kmeans_hartigan}
 best_cluster <- FitKMeans(cluster_df, max.clusters=20, nstart=25, seed=626)
-best_cluster
-```
-
-Plotting the Hartigan's rule.
-
-```{r}
 PlotHartigan(best_cluster)
-
 ```
 
-The standard R function for k-means clustering is kmeans() [stats package], which simplified format is as follow:
+The standard R function for k-means clustering is kmeans() [stats package]:
 
-kmeans(x, centers, iter.max = 10, nstart = 1)
+**kmeans(x, centers, iter.max = 10, nstart = 1)**
 
-x: numeric matrix, numeric data frame or a numeric vector
+* **x**: numeric matrix, numeric data frame or a numeric vector
+* **centers**: Possible values are the number of clusters (k) or a set of initial (distinct) cluster centers. If a number, a random set of (distinct) rows in x is chosen as the initial centers.
+* **iter.max**: The maximum number of iterations allowed. Default value is 10.
+* **nstart**: The number of random starting partitions when centers is a number. Trying nstart > 1 is often recommended.
 
-centers: Possible values are the number of clusters (k) or a set of initial (distinct) cluster centers. If a number, a random set of (distinct) rows in x is chosen as the initial centers.
-
-iter.max: The maximum number of iterations allowed. Default value is 10.
-
-nstart: The number of random starting partitions when centers is a number. Trying nstart > 1 is often recommended.
-
-```{r}
-
+```{r, kmeans_apply}
 set.seed(626)
 km_res <- kmeans(cluster_df, 3, nstart = 25)
-```
 
-Using K-means clustering we get 3 clusters of sizes 22, 15, 18.
-
-
-```{r}
-print(km_res)
-
-```
-
-
-```{r}
-#Compute the mean of each variables by clusters using the original data
-aggregate(cluster_df, by=list(cluster=km_res$cluster), mean)
-
-```
-
-
-
-```{r}
 #Add the point classifications to the original data
 dd <- cbind(cluster_df, cluster = km_res$cluster)
-head(dd)
-
-```
-
-```{r}
-# Cluster number for each of the observations
-km_res$cluster
+print(km_res)
 ```
 
 ```{r}
 #Visualizing k-means clustering
-fviz_cluster(km_res, data = cluster_df,
-             ellipse.type = "convex",
-             palette = "jco",
-             ggtheme = theme_minimal())
+#fviz_cluster(km_res, data = cluster_df,
+#             ellipse.type = "convex",
+#             palette = "jco",
+#             ggtheme = theme_minimal())
 ```
 
-
-Using the table function to see which age , race, and sex falls into cluster 1,2 or 3.
-
-```{r}
-table(cluster_age$Age, km_res$cluster)
+The table function can be used to visualize the distribution of clusters by age, race, and sex.
+```{r, kmeans_age}
+age_table <- table(km_res$cluster, cluster_age$Age)
+barplot(age_table,
+        main = 'Cluster by Age',
+        col=c("red","lightblue", "orange"))
 ```
 
-```{r}
-table(cluster_race$Race, km_res$cluster)
+```{r, kmeans_race}
+race_table <- table(km_res$cluster, cluster_race$Race)
+barplot(race_table,
+        main = 'Cluster by Race',
+        col=c("red","lightblue", "orange"))
 ```
 
-```{r}
-table(cluster_sex$Sex, km_res$cluster)
+```{r, kmeans_sex}
+sex_table <- table(km_res$cluster, cluster_sex$Sex)
+barplot(sex_table,
+        main = 'Cluster by Sex',
+        col=c("red","lightblue", "orange"))
 
 ```
-
-The table function allows how to see how many of the data points from either age, sex , race lands into one of the 3 clusters.
 
 #### Hierarchical clustering
 
-Hierarchical clustering is an alternative approach to partitioning clustering for identifying groups in the dataset. It does not require to pre-specify the number of clusters to be generated which k-means does.
+Hierarchical clustering is an alternative approach to partitioning clustering for identifying groups in the dataset. Unlike k-means, it does not require pre-specification of the number of clusters.
 
 Hierarchical clustering provides a tree-based representation of the objects called a dendrogram. Observations can be further subdivided into groups by cutting the dendrogram at an another similarity level.
 
 
-```{r}
+```{r, hier_clust}
 # Compute hierarchical clustering
 df_hc <- cluster_df %>%
   dist(method = "euclidean") %>% # Compute dissimilarity matrix
@@ -697,9 +655,7 @@ fviz_dend(df_hc, k = 3, # Cut in three groups
 
 #### Clustering Conclusion
 
-Using the Hartigan's rule, 3 is the optimal number for the clusters. Using two different clustering methods, k-means and Hierarchical clustering to depict the different 3 clusters. Hierarchical clustering depicts the clusters with a dendrogram. Using the table function to show which age group, sex group , or race group belongs to which of the three cluster groups. 
-
-#### Sub
+Using the Hartigan's rule, 3 is the optimal number for the clusters. Using two different clustering methods, k-means and Hierarchical clustering to depict the different 3 clusters. Hierarchical clustering depicts the clusters with a dendrogram. 
 
 ### PCA
 
@@ -713,11 +669,11 @@ The alternative is to conduct PCA in relation to the polychoric correlation. The
 
 #### PCA - Dataset
 
-Broadly speaking, our base dataset contains 3 main categories of features (demographics, questionnaire responses, and drug use) and a few additional miscellaneous features. Off the bat, we'll eliminate the `Psych.meds` variable, because it has more than 50% of its values missing. We will also leave demographic information (`Age`, `Sex`, and `Race`) out of the PCA because we want to preserve these values. 
+Broadly speaking, the base dataset contains 3 main categories of features (demographics, questionnaire responses, and drug use) and a few additional miscellaneous features. Off the bat, the `Psych.meds` variable is eliminated because it has more than 50% of its values missing. Demographic information (`Age`, `Sex`, and `Race`) is also left out of the PCA in order to preserve the information contained in these variables. 
 
-The approach for this analysis will be to identify the optimal reductions by first performing PCA on the 2 questionnaire sets and drug variables independently and then on a combination of these categories and the remaining miscellaneous categories together. The independent PCA of questionnaire answers & drug variables assumes that the features within these categories are correlated, but that the categories are independent of one another. We will compare the results of these analyses to the final results with all variables included together. 
+The approach for this analysis is to identify the optimal reductions by first performing PCA on the 2 questionnaire sets and drug variables independently and then on a combination of these categories and the remaining miscellaneous categories together. The independent PCA of questionnaire answers & drug variables assumes that the features within these categories are correlated, but that the categories are independent of one another. The results of these analyses are compared to the final results with all variables included together. 
 
-PCA only works with non-null values, so any records that include missing values is dropped. Additionally, since the data dictionary indicates that ADHD questions should be on scale of 1-4, records in the dataset labeled '5' are eliminated, as this is likely a data-entry error. 
+PCA only works with non-null values, so any records that include missing values are dropped. Additionally, since the data dictionary indicates that ADHD questions should be on scale of 1-4, records in the dataset labeled '5' are eliminated, as this is likely a data-entry error. 
 
 ```{r pca_base}
 pca_base <- df %>%
@@ -730,7 +686,7 @@ The base dataset for the PCA includes `r nrow(pca_base)` rows and `r ncol(pca_ba
 
 #### ADHD Questions
 
-Firstly, looking at the 18 unlabeled self-reported ADHD questions, polychoric correlation matrix is passed into the principal function to calculate the principal components. The components are arranged in descending order of contribution to variance, with RC1 explaining the largest variance and RC3 explaining the least amount of variance. Each component is a linear combination of the variables, and the resulting eigenvectors are the factors that the features need to be multiplied by for the final calculation of the component score for an observation. The resulting eigenvalues are the variances for each of the components. It can be visualize as percentages in a scree plot, as shown below
+Firstly, looking at the 18 unlabeled self-reported ADHD questions, polychoric correlation matrix is passed into the principal function to calculate the principal components. The components are arranged in descending order of contribution to variance, with RC1 explaining the largest variance and RC3 explaining the least amount of variance. Each component is a linear combination of the variables, and the resulting eigenvectors are the factors that the features need to be multiplied by for the final calculation of the component score for an observation. The resulting eigenvalues are the variances for each of the components. It can be visualized as percentages in a scree plot, as shown below.
 
 ```{r pca_adhd}
 df_adhd <- pca_base %>% 
@@ -757,7 +713,7 @@ p1 = qplot(c(1:length(adhd_pca$values)), adhd_var) +
   ylim(0, 1)
 ```
 
-The results shows that 65% of the variance is explained by principal components 1 and 2 alone. Since an SVM model is fitted to classify the `Suicide` variable, an investigation of any patterns between this variable and the first two principal components is carried out. By using the loadings matrix to calculate the final pca scores for each observation in the dataset, the below plot with respect to the `Suicide` variable can be used to identify any meaningful relationships. It is clear that there is still quite a bit of overlap between the two classes. 
+The results show that 65% of the variance is explained by principal components 1 and 2 alone. Since an SVM model is fitted to classify the `Suicide` variable, an investigation of any patterns between this variable and the first two principal components is carried out. By using the loadings matrix to calculate the final pca scores for each observation in the dataset, the below plot with respect to the `Suicide` variable can be used to identify any meaningful relationships. It is clear that there is still quite a bit of overlap between the two classes. 
 
 ```{r, pca_adhd_final, fig.height=5}
 adhd_pca$scores <- factor.scores(df_adhd, adhd_pca) 
@@ -770,7 +726,7 @@ p2 = ggplot(df_adhd_final, aes(PC1, PC2, col = Suicide, fill = Suicide)) +
 gridExtra::grid.arrange(p1,p2, nrow = 2)
 ```
 
-Next, using a 90% coutoff, the total number of principal components that the data can be reduce to is determined. In other words, the number of components that make up 90% of the variability in the data is accepted. This threshold is identified by looking at a cumulative plot of the variances. 
+Next, using a 90% coutoff, the total number of principal components that the data can be reduced to is determined. In other words, the number of components that make up 90% of the variability in the data is accepted. This threshold is identified by looking at a cumulative plot of the variances. 
 
 ```{r pca_adhd_cumulative}
 adhd_cumulative_var <- cumsum(adhd_pca$values/sum(adhd_pca$values))
@@ -816,7 +772,7 @@ p1 = qplot(c(1:length(mood_pca$values)), mood_var) +
   ylim(0, 1)
 ```
 
-Once again, take a look at these components with respect to the `Suicide` variable. There is still quite a bit of overlap, nonetheless there is some distinctions between the two classes (lower PC1 is more indicative of non-Suicide individuals).
+Once again, take a look at these components with respect to the `Suicide` variable. There is still quite a bit of overlap, nonetheless there is some distinction between the two classes (lower PC1 is more indicative of non-Suicide individuals).
 
 ```{r, pca_mood_final, fig.height=5}
 mood_pca$scores <- factor.scores(df_mood,mood_pca) 
