@@ -31,10 +31,9 @@ library(caret)
 library(psych)
 library(VIM)
 library(mice)
-library(useful) 
+library(useful) # FitKMeans function for clustering
 library(cluster)
 library(factoextra)
-library(Boruta)
 ```
 
 ## Overview {.tabset .tabset-fade .tabset.-pills}
@@ -426,7 +425,7 @@ temp = na.omit(as.data.frame(sapply(df[,c(4:21)], factor)))
 # Run factor analysis
 factoranalysis1 <- factanal(sapply(temp,as.numeric), 3, rotation="promax", 
                             scores = "regression")
-#print(factoranalysis1, digits=2, cutoff=.2, sort=TRUE)
+print(factoranalysis1, digits=2, cutoff=.2, sort=TRUE)
 ```
 
 ```{r fa.ADHD.plot1}
@@ -447,7 +446,7 @@ temp = na.omit(as.data.frame(sapply(df[,c(23:37)], factor)))
 # Run factor analysis
 factoranalysis2 <- factanal(sapply(temp,as.numeric), 3, rotation="promax", 
                             scores = "regression")
-#print(factoranalysis2, digits=2, cutoff=.2, sort=TRUE)
+print(factoranalysis2, digits=2, cutoff=.2, sort=TRUE)
 ```
 
 ```{r fa.MD.plot1}
@@ -459,6 +458,7 @@ text(load, labels=names(temp), cex=.7)
 loads <- factoranalysis2$loadings
 fa.diagram(loads)
 ```
+
 
 Observation-specific factor scores are calculated for each of the six found factors--three for the ADHD features and three for the MD features--using Thomson's regression method. These scores are then combined with the larger data set, replacing the specific question features.
 
@@ -527,126 +527,214 @@ df_transform <- df_dummy %>% preProcess(method = c('center','scale')) %>%
   rename(Suicide = 'df_impute$Suicide')
 ```
 
+Lastly, the dataset is split 70/30 into a training set (n = 124) and a test set (n = 51). The latter will be held out for validation.
+
+```{r split}
+set.seed(622)
+index <- as.vector(createDataPartition(df_transform$Suicide, p = .70, list = FALSE))
+train <- df_transform[index,] # 124 observations
+test <- df_transform[-index,] # 51 observations
+```
+
 ### Clustering of Patients
 
 Clustering is the partitioning of data into groups. This can be done in a number of ways, the two most popular being K-means and hierarchical clustering. In terms of a data frame, a clustering algorithm finds out which rows are similar to each other. Rows that are grouped together have high similarity to each other and low similarity to rows outside the grouping.
-  
-#### Clustering - Dataset
-With this data set, sex, race, and age are excluded from the clustering analysis as they could be correlated with group membership. The `Psych.meds` variable is also excluded, as it is more than 50% empty. Finally, any records containing null values are omitted from the dataset. 
 
-```{r, kmeans_prep}
-cluster_df <- df %>% 
-  select(-Psych.meds.) %>%
-  rename_all(make.names)
 
-#remove NA values
-#sum(sapply(cluster_df , is.na))
-cluster_df <-na.omit(cluster_df)
-#sum(sapply(cluster_df , is.na))
-#sum(sapply(cluster_df , is.infinite))
-#sum(sapply(cluster_df , is.nan))
+#### K-means clustering in R
 
-# Make 3 dataframes with just age, race, sex so we can use the table function to 
-# see how the datapoints fall into each cluster.
-cluster_age <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Race"))]
-cluster_race <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Age"))]
-cluster_sex <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Race"))]
-cluster_df <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Sex", "Race"))]
-```
+K-means clustering consists of defining clusters so that the total intra-cluster variation is minimized. For clustering distance measures, the classification of variables into groups requires some methods to compute the distance between each pair of variables. One method used is the distance matrix. 
 
-The final dataset for the clustering analysis has `r nrow(cluster_df)` rows and `r ncol(cluster_df)` columns. 
+1. Specify the number of clusters (K) to be used.
 
-#### K-means Clustering
+2. Select randomly k objects from the data set as the initial cluster centers or means.
 
-One of the more popular algorithms for clustering is K-means. It divides the observations into predefined, discrete groups based on some distance metric.
+3. Assign each observation to their closest centroid, based on the Euclidean distance between the object and the centroid.
 
-#### Hartigan's Rule
+4. For each of the k clusters update the cluster centroid by calculating the new mean values of all the data points in the cluster. The centroid of a Kth cluster is a vector of length p containing the means of all variables for the observations in the kth cluster; p is the number of variables.
 
-Finding the right number of clusters is important in getting a good partitioning of the data. A good metric for determining the optimal number of clusters is Hartigan’s rule. It essentially compares the ratio of the within-cluster sum of squares for a clustering with k clusters and one with k + 1 clusters, accounting for the number of rows and clusters. If that number is greater than 10, then it is worth using k + 1 clusters. Fitting this repeatedly can be a chore and computationally inefficient if not done right. The useful package has the FitKMeans function for doing just that.
+5. Iteratively minimize the total within sum of square. Iterate steps 3 and 4 until the cluster assignments stops or the maximum number of iterations is reached.
 
-The Hartigan plot shows that the optimal cluster number to use is 3.
+#### Data Preparation
 
-```{r, kmeans_hartigan}
-best_cluster <- FitKMeans(cluster_df, max.clusters=20, nstart=25, seed=626)
-PlotHartigan(best_cluster)
-```
+To perform a cluster analysis in R, the data should be prepared:
 
-The standard `R` function for k-means clustering is kmeans() [stats package]:
+Rows are observations and cloumns are variables.
 
-**kmeans(x, centers, iter.max = 10, nstart = 1)**
+Any missing value in the data must be omitted.
 
-* **x**: numeric matrix, numeric data frame or a numeric vector
-* **centers**: Possible values are the number of clusters (k) or a set of initial (distinct) cluster centers. If a number, a random set of (distinct) rows in x is chosen as the initial centers.
-* **iter.max**: The maximum number of iterations allowed. Default value is 10.
-* **nstart**: The number of random starting partitions when centers is a number. Trying nstart > 1 is often recommended.
-
-```{r, kmeans_apply}
-set.seed(626)
-km_res <- kmeans(cluster_df, 3, nstart = 25)
-
-#Add the point classifications to the original data
-dd <- cbind(cluster_df, cluster = km_res$cluster)
-print(km_res)
-```
+The data must be scale to make variables comparable. Variables must be transformed so they have mean zero and standard deviation of one.
 
 ```{r}
-#Visualizing k-means clustering
-#fviz_cluster(km_res, data = cluster_df,
-#             ellipse.type = "convex",
-#             palette = "jco",
-#             ggtheme = theme_minimal())
-```
+ADHD_df <- read_csv("https://raw.githubusercontent.com/greeneyefirefly/DATA622-Group3/main/Project_4/ADHD_data.csv")
+ADHD_df <- ADHD_df %>% rename_all(make.names)
 
-The table function can be used to visualize the distribution of clusters by age, race, and sex.
+ADHD_df <- na.omit(ADHD_df)
 
-```{r, kmeans_age}
-age_table <- table(km_res$cluster, cluster_age$Age)
-barplot(age_table,
-        main = 'Cluster by Age',
-        col=c("red","lightblue", "orange"))
-```
+ADHD_df <- ADHD_df[, -which(names(ADHD_df) %in% c("Initial"))]
 
-```{r, kmeans_race}
-race_table <- table(km_res$cluster, cluster_race$Race)
-barplot(race_table,
-        main = 'Cluster by Race',
-        col=c("red","lightblue", "orange"))
-```
-
-```{r, kmeans_sex}
-sex_table <- table(km_res$cluster, cluster_sex$Sex)
-barplot(sex_table,
-        main = 'Cluster by Sex',
-        col=c("red","lightblue", "orange"))
+df <- scale(ADHD_df)
+head(df)
 
 ```
 
-#### Hierarchical clustering
+Create and visualize the distance matrix of the variables.
 
-Hierarchical clustering is an alternative approach to partitioning clustering for identifying groups in the dataset. Unlike k-means, it does not require pre-specification of the number of clusters.
-
-Hierarchical clustering provides a tree-based representation of the objects called a dendrogram. Observations can be further subdivided into groups by cutting the dendrogram at an another similarity level.
-
-```{r, hier_clust}
-# Compute hierarchical clustering
-df_hc <- cluster_df %>%
-  dist(method = "euclidean") %>% # Compute dissimilarity matrix
-  hclust(method = "ward.D2")     # Compute hierachical clustering
-
-# Visualize using factoextra
-# Cut in 3 groups and color by groups
-fviz_dend(df_hc, k = 3, # Cut in three groups
-          cex = 0.5, # label size
-          k_colors = c("#2E9FDF", "#00AFBB", "#E7B800", "#FC4E07"),
-          color_labels_by_k = TRUE, # color labels by groups
-          rect = TRUE # Add rectangle around groups
-          )
+```{r}
+distance <- get_dist(df)
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
 
 ```
 
-#### Clustering Conclusion
+First, group the data into two clusters (centers = 2). The kmeans function also has an nstart option that attempts multiple initial configurations and reports on the best one. For example, adding nstart = 25 will generate 25 initial configurations.
 
-Using the Hartigan's rule, 3 is the optimal number for the clusters. Using two different clustering methods, k-means and Hierarchical clustering to depict the different 3 clusters. Hierarchical clustering depicts the clusters with a dendrogram. 
+
+```{r}
+k2 <- kmeans(df, centers = 2, nstart = 25)
+str(k2)
+
+```
+
+Breakdown of k-means function and what it means:
+
+**cluster**: A vector of integers (from 1:k) indicating the cluster to which each point is allocated.
+**centers**: A matrix of cluster centers.
+**totss**: The total sum of squares.
+**withinss**: Vector of within-cluster sum of squares, one component per cluster.
+**tot.withinss**: Total within-cluster sum of squares, i.e. sum(withinss).
+**betweenss**: The between-cluster sum of squares, i.e. $totss-tot.withinss$.
+**size**: The number of points in each cluster.
+
+```{r}
+fviz_cluster(k2, data = df)
+
+```
+
+Using scatter plot to compared Suicide Attempts vs Age. There doesn't seem to be any relationship with age and suicide attempts. However there seem to be more suicide attempts by patients in cluster 2.
+
+```{r}
+ADHD_df %>%
+  as_tibble() %>%
+  mutate(cluster = k2$cluster) %>%
+  ggplot(aes(Age, Suicide, color = factor(cluster), label = Suicide)) +
+  geom_text()
+
+```
+
+Run the kmeans function with clusters 3, 4, and 5 to see how it looks like. However, doing this does not give the optimal cluster to use, it is just strictly for observation.
+
+
+```{r}
+k3 <- kmeans(df, centers = 3, nstart = 25)
+k4 <- kmeans(df, centers = 4, nstart = 25)
+k5 <- kmeans(df, centers = 5, nstart = 25)
+
+# plots to compare
+p1 <- fviz_cluster(k2, geom = "point", data = df) + ggtitle("k = 2")
+p2 <- fviz_cluster(k3, geom = "point",  data = df) + ggtitle("k = 3")
+p3 <- fviz_cluster(k4, geom = "point",  data = df) + ggtitle("k = 4")
+p4 <- fviz_cluster(k5, geom = "point",  data = df) + ggtitle("k = 5")
+
+library(gridExtra)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+
+```
+
+There are many methods to find the optimal cluster to use for k-means clustering. Sihouette method would be used for this example. The average silhouette method measures the quality of a clustering and it determines how well each variable lies within its cluster. A high average silhouette width indicates a good clustering. The average silhouette method computes the average silhouette of observations for different values of k. The optimal number of clusters k is the one that maximizes the average silhouette over a range of possible values for k. 
+
+```{r}
+# function to compute average silhouette for k clusters
+avg_sil <- function(k) {
+  km.res <- kmeans(df, centers = k, nstart = 25)
+  ss <- silhouette(km.res$cluster, dist(df))
+  mean(ss[, 3])
+}
+
+# Compute and plot wss for k = 2 to k = 15
+k.values <- 2:15
+
+# extract avg silhouette for 2-15 clusters
+avg_sil_values <- map_dbl(k.values, avg_sil)
+
+plot(k.values, avg_sil_values,
+       type = "b", pch = 19, frame = FALSE, 
+       xlab = "Number of clusters K",
+       ylab = "Average Silhouettes")
+
+```
+
+The optimal cluster chosen appears to be 3.
+
+
+```{r}
+fviz_nbclust(df, kmeans, method = "silhouette")
+```
+
+Update the final cluster method with the optimal cluster chosen by the average Silhouette Method. 
+
+```{r}
+# Compute k-means clustering with k = 3
+set.seed(123)
+final <- kmeans(df, 3, nstart = 25)
+print(final)
+
+```
+
+
+Plot the final clusters
+
+```{r}
+fviz_cluster(final, data = df)
+```
+
+Observe the means of each variable of each of the three clusters.
+
+```{r}
+df %>%
+  mutate(Cluster = final$cluster) %>%
+  group_by(Cluster) %>%
+  summarise_all("mean")
+```
+
+#### Clustering Conclusion:
+
+*Mental Health Dataset Column Definition*
+
+Using the variable description of each column, predictions can be made for each clusters.
+
+Columns | Variable | Description  
+---|---|-----  
+C |  Sex | Male-1, Female-2  
+D | Race | White-1, African American-2, Hispanic-3, Asian-4, Native American-5, Other or missing data -6  
+E - W | ADHD self-report scale |  Never-0, rarely-1, sometimes-2, often-3, very often-4  
+X - AM | Mood disorder questions |  No-0, yes-1; question 3: no problem-0, minor-1, moderate-2, serious-3  
+AN - AS | Individual substances misuse |   no use-0, use-1, abuse-2, dependence-3   
+AT | Court Order |   No-0, Yes-1  
+AU | | Education |  1-12 grade, 13+ college  
+AV | History of Violence |  No-0, Yes-1  
+AW | Disorderly Conduct |  No-0, Yes-1  
+AX | Suicide attempt |  No-0, Yes-1  
+AY | Abuse Hx |  No-0, Physical (P)-1, Sexual (S)-2, Emotional (E)-3, P&S-4, P&E-5, S&E-6, P&S&E-7  
+AZ | Non-substance-related Dx |  0 - none; 1 - one; 2 - More than one  
+BA | Substance-related Dx |  0 - none; 1 - one Substance-related; 2 - two; 3 - three or more  
+BB | Psychiatric Meds |  0 - none; 1 - one psychotropic med; 2 - more than one psychotropic med  
+
+Cluster 1 and Cluster 3 are overlapping and quite similar to one another. Cluster 2 is alone by itself. This can be seen in the data from the table above. Cluster 1 and 3 have patients answering on average higher than cluster 2 for ADHD Questions.
+Cluster 3 can be considered a youth cluster with a mean age of 26.07, while cluster 1 have 48.13 and cluster have 41.66. 
+
+For the mood questions, there aren't much difference between each clusters. However for mood question 3, Cluster 1 and 3 are both 2.4 while Cluster 2 is 1.8.
+
+Everyone in cluster 2 has done cocaine. Only cluster 1 have patients doing sedatives.hypnotics. 
+
+Cluster 3 patients have 4 times more likely to have a court order compared to cluster 1 and 2.
+
+Education is all around Grade 12.5 - 12.6 for all three clusters.
+
+
+Cluster 3 seems to have almost twice the amount of suicide attempts compared to cluster 1 and 2.
+
+
+
 
 ### PCA
 
@@ -916,30 +1004,38 @@ By exploring the differences between completing PCA independently on the 3 categ
 
 ### Suicide Predictions using SVM
 
-SVM is a supervised machine learning algorithm that can be used for classification or regression problems. Kernel is the technique used to transform ones data and then based on these transformations an optimal boundary is then found between the possible outputs. The data transformations are pretty complex, then separates your data based on the labels or outputs that have been defined. 
+SVM is a supervised machine learning algorithm that can be used for classification or regression problems. Kernel is the technique used to transform ones data and then based on these transformations an optimal boundary is then found between the possible outputs. The data transformations are pretty complex, then seperates your data based on the labels or outputs that have been defined. 
 
-SVM can be run using the e1071 package or the caret package. In the e1071 package the kernals are Linear, Radial, Polynomial or Sigimoid. In the caret package, the kernels are listed as svmLinear (for linear values), svmRadial (for non linear), and svmPoly (for nonlinear). When it is run within the svm function the kernals are listed differently in the in the e1071 it is listed under kernel, while in the caret package it is listed under method. 
+SVM can be run using the e1071 package or the caret package. In the e1071 package the kernals are Linear, Radial, Polynomial or Sigimoid. In the caret package the kernals are listed as svmLinear(for linear values), svmRadial(for non linear), and svmPoly(for nonlinear). When it is run within the svm function the kernals are listed differently in the in the e1071 it is listed under kernal, while in the caret package it is listed under method. 
 
-For the purpose of this project the caret package will be used to obtain the SVM values. svmLinear, svmRadial, and svmPoly will be used to see which one has the best outcome. 
+For the purpose of this project the caret package will be used to obtain the svm values. svmLinear, svmRadial, and svmPoly will be used to see which one has the best outcome. 
 
-#### SVM - Dataset
+
+### SVM Dataset
 
 The data that will be used is the train and test set that was already created. Since the data was converted to include dummy variables for optimization.Some features of the train and set data will be removed in order to decrease the size of the data. The features that will be removed are 'Race', 'Sex', 'Age', because it may be highly correlated. 'Education' will also be removed since it is also demographic. As well as 'Psych.meds' will not  be used since it only 50% of data in the original data. 
 
-The features are separated based on the features that is based on the PCA analysis to see if it will have the same outcome. Boruta would be used as well in order to determine the best features for the data. This will only be used for the drug feature and for all features. Since feature importance will be used for the drug features and all features another dataset will be created for the feature selection since it won't make sense to do feature selection using Boruta with dummy variables. But for both datasets the same features is be removed. 
+The features will be separated based on the features that is based on the PCA analysis to see if it will have the same outcome. Boruta would be used as well in order to determine the best features for the data. This will only be used for the drug feature and for all features. Since feature importance will be used for the drug features and all features another dataset will be created for the feature selection since it won't make sense to do feature selection using Boruta with dummy variables. But for both datasets the same features will be removed. 
 
-Lastly, the dataset is split 70/30 into a training set (n = 124) and a test set (n = 51). The latter will be held out for validation.
+For the drug features and the all features dataset the data will be imputed, then the data will be split. 
 
-```{r split}
-set.seed(622)
-index <- as.vector(createDataPartition(df_impute$Suicide, p = .70, list = FALSE))
-svm_train <- df_impute[index,] # 124 observations
-svm_test <- df_impute[-index,] # 51 observations
 
-index <- as.vector(createDataPartition(df_transform$Suicide, p = .70, list = FALSE))
-train <- df_transform[index,] # 124 observations
-test <- df_transform[-index,] # 51 observations
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+df_trans<- df
+imputed <- mice(data = df_trans)
+traindfimp = complete(imputed)
 ```
+
+
+```{r}
+set.seed(622)
+index <- as.vector(createDataPartition(traindfimp$Suicide, p = .70, list = FALSE))
+svm_train <- traindfimp[index,] # 124 observations
+svm_test <- traindfimp[-index,] # 51 observations
+```
+
 
 ```{r svm_base}
 svm_train <- svm_train %>%
@@ -947,39 +1043,53 @@ svm_train <- svm_train %>%
   mutate_if(is.factor, as.character) %>%
   mutate_if(is.character, as.numeric)
 
+
 svm_test <- svm_test %>%
   select(-Age, -Sex, -Race, -ADHD.Total, -MD.TOTAL, -Education, -Psych.meds.) %>%
   mutate_if(is.factor, as.character) %>%
   mutate_if(is.character, as.numeric)%>%
   drop_na()
 
+ 
 svm_train$Suicide<-as.factor(svm_train$Suicide)
 svm_test$Suicide<-as.factor(svm_test$Suicide)
+
 ```
+
+
 
 ```{r svm data prep}
 svm_train2<- train%>%
   select(-Race.1,-Race.2,-Race.3, -Race.6, -Age, -Sex.1,-Sex.2,-ADHD.Total, -MD.TOTAL, -starts_with('Education'), -Psych.meds..L, -Psych.meds..Q)
 
+
 svm_test2<- test%>%
    select(-Race.1,-Race.2,-Race.3, -Race.6, -Age, -Sex.1,-Sex.2,-ADHD.Total, -MD.TOTAL, -starts_with('Education'), -Psych.meds..L, -Psych.meds..Q)
+
 ```
 
-#### Drug Features 
 
-A separate dataset is created in order to single out the drug features.   
 
-```{r df}
+
+### Drug Features 
+
+
+A seperate dataset is created in order to single out the the drug features.   
+
+```{r}
 drugs_df<-svm_train%>%
     select(Alcohol, THC, Cocaine, Stimulants, Sedative.hypnotics, Opioids, Subst.Dx, Suicide) 
 ```
 
+
 This dataset includes "Alcohol.","THC.", "Subst.Dx.", "Cocaine", "Stimulants.","Sedative.hypnotics.", "Opioids", along with all of the dummy variables, and Suicide which is the deciding factor. 
 
-##### Drug Feature Importance 
+
+#### Drug Feature Importance 
 
 ```{r drugboruta, message=FALSE, warning=FALSE}
 set.seed(525)
+library(Boruta)
 output = Boruta(drugs_df$Suicide ~ ., data = drugs_df, doTrace = 0)  
 roughFixMod = TentativeRoughFix(output)
 importance = attStats(TentativeRoughFix(output))
@@ -989,11 +1099,15 @@ kable(head(importance[order(-importance$meanImp), ]),
   kable_styling(bootstrap_options = "striped", full_width = TRUE)
 ```
 
-Only two are considered to be important, which are 'Cocaine' and 'Alcohol'.
 
-Next, SVM on the drug features is use to model whether a patient attempted suicide. The caret package will be used for all of the models and it will include a preprocess function which will be centered and scaled. 
+Only one was considered to be important, which is 'Alcohol'.
 
-```{r linear_df}
+
+#### svmLinear for Drugs Features
+
+The caret package will be used for all of the models and it will include a preprocess function which will be centered and scaled. 
+
+```{r}
 set.seed(123)
 drugs_model <- train(
   Suicide ~., data = drugs_df, method = "svmLinear",
@@ -1012,22 +1126,30 @@ drugs_model_imp = train(Suicide ~.,
                                           allowParallel = TRUE))
 ```
 
-```{r linear_df_plot}  
+
+```{r}  
 drug_pred <-predict(drugs_model, svm_test)
 
-# confusionMatrix(table(drug_pred, svm_test$Suicide))
+confusionMatrix(table(drug_pred, svm_test$Suicide))
 
 pCol <- c("#37004D", '#ff8301', '#bf5ccb')
 svm_test1<-svm_test
 svm_test1$drug_pred<- drug_pred
 
-p1 = ggplot(svm_test1, aes(x = Suicide, y = drug_pred, color = Suicide)) +
+ggplot(svm_test1, aes(x = Suicide, y = drug_pred, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol) +
-  labs(title = 'svmLinear Accuracy : 0.71')
+  scale_color_manual(values = pCol)
 ```
 
-```{r radial_df}
+
+Accuracy for this seems pretty low, but how does it compare to the others.
+
+
+### svmRadial 
+
+
+
+```{r}
 set.seed(123)
 drugs_model_rad <- train(
   Suicide ~ Opioids + Cocaine, data = drugs_df, method = "svmRadial",
@@ -1049,17 +1171,25 @@ model_imp = train(Suicide ~.,
 
 drug_pred_rad <-predict(drugs_model_rad, svm_test)
 
-# confusionMatrix(table(drug_pred_rad, svm_test$Suicide))
+confusionMatrix(table(drug_pred_rad, svm_test$Suicide))
+
 
 svm_test1$drug_pred_rad<- drug_pred_rad
 
-p2 = ggplot(svm_test1, aes(x = Suicide, y = drug_pred_rad, color = Suicide)) +
+ggplot(svm_test1, aes(x = Suicide, y = drug_pred_rad, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol) +
-  labs(title = 'svmRadial Accuracy : 0.69')
+  scale_color_manual(values = pCol)
 ```
 
-```{r poly_df}
+
+This one is actually less than the previous one.  
+
+
+### svmPoly
+
+Prediction
+
+```{r}
 set.seed(123)
 drugs_model_poly <- train(
   Suicide ~Opioids + Cocaine, data = drugs_df, method = "svmPoly",
@@ -1079,53 +1209,78 @@ drugs_model_poly = train(Suicide ~.,
                                           allowParallel = TRUE))
 ```
 
-```{r poly_df_plot}
+
+Plot prediction
+
+```{r}
 drug_pred_poly <-predict(drugs_model_poly, svm_test)
 
-# confusionMatrix(table(drug_pred_poly, svm_test$Suicide))
+confusionMatrix(table(drug_pred_poly, svm_test$Suicide))
+
 
 svm_test1$drug_pred_poly<- drug_pred_poly
 
-p3 = ggplot(svm_test1, aes(x = Suicide, y = drug_pred_poly, color = Suicide)) +
+ggplot(svm_test1, aes(x = Suicide, y = drug_pred_poly, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol)+
-  labs(title = 'svmPoly Accuracy : 0.73')
-```
-```{r final_plot_drug}
-gridExtra::grid.arrange(p1,p2,p3, nrow=3)
+  scale_color_manual(values = pCol)
 ```
 
-The svmPoly ends up achieving the best accuracy rate based on the drug features.
 
-##### Model Validation 
 
-```{r mv_df}
+svmPoly ends up being the same as svmRadial. So svmLinear gave the best prediction. Since svmLinear gave a higher prediction the tune function can be used to see if a better outcome is given. 
+
+
+### svmLinear Tuned Drugs
+
+Plot model accuracy vs different values of Cost
+
+```{r}
 set.seed(123)
 drugs_tuned <- train(
-  Suicide ~. , data = drugs_df, method = "svmPoly",
+  Suicide ~. , data = drugs_df, method = "svmLinear",
   trControl = trainControl("cv", number = 10),
-  tuneLength= 5,
+  tuneGrid = expand.grid(C = seq(0, 2, length = 20)),
   preProcess = c("center","scale")
   )
+# Plot model accuracy vs different values of Cost
+plot(drugs_tuned)
+```
 
+
+Best tuning parameter C
+
+```{r}
+drugs_tuned$bestTune
+```
+
+The tuning of drug features did not give the best outcome its about the same as the svmLinear. 
+
+```{r}
 # Make predictions on the test data
 predicted.classes <- drugs_tuned %>% predict(svm_test)
 # Compute model accuracy rate
 mean(predicted.classes == svm_test$Suicide)
 ```
 
-By tuning of drug features with the svmPoly model, the accuracy on the test data resulted in 0.73.  
+The tuning of drug features gave the same prediction as the svmLinear.  
 
-#### ADHD Questions 
 
-The original train data with the transformations is used for this one since the ADHD questions was condensed to three factors.
+## ADHD Questions 
 
-```{r adhd_df}
+The orignal train data with the tranformations is used for this one since the ADHD questions was condensed to three. 
+
+
+```{r}
 ADHD_df<-svm_train2 %>%
   select(starts_with("ADHD_"), Suicide)
 ```
 
-```{r linear_adhd}
+
+### svmLinear
+
+Prediction for svmLinear
+
+```{r}
 set.seed(123)
 ADHD_model <- train(
   Suicide ~., data = ADHD_df, method = "svmLinear",
@@ -1136,21 +1291,33 @@ ADHD_model <- train(
 
 ADHD_pred <-predict(ADHD_model, svm_test2)
 
-# confusionMatrix(table(ADHD_pred, svm_test2$Suicide))
+confusionMatrix(table(ADHD_pred, svm_test2$Suicide))
 ```
 
-```{r linear_adhd_plot}
+
+Plot Prediction
+
+```{r}
 pCol <- c( '#ff8301', '#bf5ccb')
 svm_test3<-svm_test2
 svm_test3$ADHD_pred<- ADHD_pred
 
-p1 = ggplot(svm_test3, aes(x = Suicide, y = ADHD_pred, color = Suicide)) +
+ggplot(svm_test3, aes(x = Suicide, y = ADHD_pred, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol)+
-  labs(title = 'svmLinear Accuracy : 0.71')
+  scale_color_manual(values = pCol)
 ```
 
-```{r radial_adhd}
+
+
+This seems to be better in comparison to the svmLiner in the drug feature. Lets see how svmRadial is in comparison. 
+
+
+
+### svmRadial 
+
+Prediction for svmRadial
+
+```{r}
 set.seed(123)
 ADHD_model_rad <- train(
   Suicide ~., data = ADHD_df, method = "svmRadial",
@@ -1160,20 +1327,29 @@ ADHD_model_rad <- train(
   )
 ADHD_pred_rad <-predict(ADHD_model_rad, svm_test2)
 
-# confusionMatrix(table(ADHD_pred_rad, svm_test2$Suicide))
+confusionMatrix(table(ADHD_pred_rad, svm_test2$Suicide))
 ```
 
-```{r radial_adhd_plot}
+
+Plot prediction
+
+```{r}
 
 svm_test3$ADHD_pred_rad<- ADHD_pred_rad
 
-p2 = ggplot(svm_test3, aes(x = Suicide, y = ADHD_pred_rad, color = Suicide)) +
+ggplot(svm_test3, aes(x = Suicide, y = ADHD_pred_rad, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol)+
-  labs(title = 'svmRadial Accuracy : 0.69')
+  scale_color_manual(values = pCol)
 ```
 
-```{r poly_adhd}
+The prediction for svmRadial is worse than the svmLinear. 
+
+
+### svmPoly
+
+Prediction for svmPoly
+
+```{r}
 set.seed(123)
 ADHD_model_poly <- train(
   Suicide ~., data = ADHD_df, method = "svmPoly",
@@ -1184,26 +1360,29 @@ ADHD_model_poly <- train(
 
 ADHD_pred_poly <-predict(ADHD_model_poly, svm_test2)
 
-# confusionMatrix(table(ADHD_pred_poly, svm_test2$Suicide))
+confusionMatrix(table(ADHD_pred_poly, svm_test2$Suicide))
 ```
 
-```{r poly_adhd_plot}
+
+Plot prediction
+
+```{r}
 svm_test3$ADHD_pred_poly<- ADHD_pred_poly
 
-p3 = ggplot(svm_test3, aes(x = Suicide, y = ADHD_pred_poly, color = Suicide)) +
+ggplot(svm_test3, aes(x = Suicide, y = ADHD_pred_poly, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol)+
-  labs(title = 'svmPoly Accuracy : 0.69')
-```
-```{r final_plot_adhd}
-gridExtra::grid.arrange(p1,p2,p3, nrow=3)
+  scale_color_manual(values = pCol)
 ```
 
-It seems that svmRadial and svmPoly model results in the same accuracy rate, thus svmLinear is used to tune and make predictions on the test set.
 
-##### Model Validation
+svmPoly was better than svmRadial but it was not better than svmLiner. Since svmLinear was the best model the svmLinear model can be tuned for a better outcome. 
 
-```{r mv_adha}
+
+### svmLinear Tuned ADHD
+
+Plot model accuracy vs different values of Cost
+
+```{r}
 set.seed(123)
 ADHD_tuned <- train(
   Suicide ~. , data = ADHD_df, method = "svmLinear",
@@ -1211,25 +1390,46 @@ ADHD_tuned <- train(
   tuneGrid = expand.grid(C = seq(0, 2, length = 20)),
   preProcess = c("center","scale")
   )
+# Plot model accuracy vs different values of Cost
+plot(ADHD_tuned)
+```
 
+
+Best tuning parameter C
+
+
+```{r}
+drugs_tuned$bestTune
+```
+
+The tuning of drug features did not give the best outcome its about the same as the svmLinear. 
+
+```{r}
 # Make predictions on the test data
 predicted.classes <- drugs_tuned %>% predict(svm_test)
 # Compute model accuracy rate
 mean(predicted.classes == svm_test$Suicide)
 ```
 
-The tuning of ADHD features with the svmLinear model resulted in the accuracy on the test data of 0.73.  
 
-#### MD Questions 
 
-Like the ADHD the original train data with the transformations will be used for this one since the MD questions was condensed to three. 
+## MD Questions 
 
-```{r md_df}
+Like the ADHD the orignal train data with the tranformations will be used for this one since the MD questions was condensed to three. 
+
+
+```{r}
 MD_df<-svm_train2%>%
   select(starts_with("MD_"), Suicide)
 ```
 
-```{r linear_md}
+
+## svmLinear 
+
+Prediction for svmLinear
+
+
+```{r}
 set.seed(123)
 MD_model <- train(
   Suicide ~., data = MD_df, method = "svmLinear",
@@ -1239,21 +1439,31 @@ MD_model <- train(
 
 MD_pred <-predict(MD_model, svm_test2)
 
-# confusionMatrix(table(MD_pred, svm_test2$Suicide))
+confusionMatrix(table(MD_pred, svm_test2$Suicide))
 ```
 
-```{r linear_md_plot}
+
+Plot prediction. 
+
+
+```{r}
 pCol <- c( '#ff8301', '#bf5ccb')
 svm_test3<-svm_test2
 svm_test3$MD_pred<- MD_pred
 
-p1 = ggplot(svm_test3, aes(x = Suicide, y = MD_pred, color = Suicide)) +
+ggplot(svm_test3, aes(x = Suicide, y = MD_pred, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol)+
-  labs(title = 'svmLinear Accuracy : 0.69')
+  scale_color_manual(values = pCol)
 ```
 
-```{r radial_md}
+The prediction for this svmLinear is less than the drug feature, but about the same as the ADHD one.
+
+
+### svmRadial
+
+Prediction for svmRadial
+
+```{r}
 set.seed(123)
 MD_model_rad <- train(
   Suicide ~., data = MD_df, method = "svmRadial",
@@ -1263,19 +1473,28 @@ MD_model_rad <- train(
 
 MD_pred_rad <-predict(MD_model_rad, svm_test2)
 
-# confusionMatrix(table(MD_pred_rad, svm_test2$Suicide))
+confusionMatrix(table(MD_pred_rad, svm_test2$Suicide))
 ```
 
-```{r radial_md_plot}
+
+Plot prediction.
+
+```{r}
 svm_test3$MD_pred_rad<- MD_pred_rad
 
-p2 = ggplot(svm_test3, aes(x = Suicide, y = MD_pred_rad, color = Suicide)) +
+ggplot(svm_test3, aes(x = Suicide, y = MD_pred_rad, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol)+
-  labs(title = 'svmRadial Accuracy : 0.69')
+  scale_color_manual(values = pCol)
 ```
 
-```{r poly_md}
+This is the same as the svmLinear. 
+
+
+### svmPoly
+
+Plot prediction for svmPoly
+
+```{r}
 set.seed(123)
 MD_model_poly <- train(
   Suicide ~., data = MD_df, method = "svmPoly",
@@ -1285,31 +1504,35 @@ MD_model_poly <- train(
 
 MD_pred_poly <-predict(MD_model_poly, svm_test2)
 
-# confusionMatrix(table(MD_pred_poly, svm_test2$Suicide))
+confusionMatrix(table(MD_pred_poly, svm_test2$Suicide))
 ```
 
-```{r poly_md_plot}
+
+Plot Prediction. 
+
+
+```{r}
 svm_test3$MD_pred_poly<- MD_pred_poly
 
-p3 = ggplot(svm_test1, aes(x = Suicide, y = MD_pred_poly, color = Suicide)) +
+ggplot(svm_test1, aes(x = Suicide, y = MD_pred_poly, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol)+
-  labs(title = 'svmPoly Accuracy : 0.69')
-```
-```{r final_plot_md}
-gridExtra::grid.arrange(p1,p2,p3, nrow=3)
+  scale_color_manual(values = pCol)
 ```
 
-Again, this seems that each model results in the same accuracy rate. 
 
-#### All Features 
+This is the same as the svmLinear and svmPoly. 
+
+
+### All Features 
 
 All of the features will be used for these models. 
 
-##### Most Important feature 
 
-```{r boruta_all, message=FALSE, warning=FALSE}
+#### Most Important feature 
+
+```{r boruta, message=FALSE, warning=FALSE}
 set.seed(525)
+library(Boruta)
 output = Boruta(svm_train$Suicide ~ ., data = svm_train, doTrace = 0)  
 roughFixMod = TentativeRoughFix(output)
 importance = attStats(TentativeRoughFix(output))
@@ -1319,9 +1542,16 @@ kable(head(importance[order(-importance$meanImp), ]),
   kable_styling(bootstrap_options = "striped", full_width = TRUE)
 ```
 
-The most important was 'Cocaine' and 'Abuse', and the others are not as important. 
 
-```{r linear_all}
+The most important was 'Abuse', and the others are not as important. 
+
+
+### svmLinear
+
+Prediction for svmLinear
+
+
+```{r}
 set.seed(123)
 all_model <- train(
   Suicide ~., data = svm_train, method = "svmLinear",
@@ -1337,23 +1567,36 @@ all_model_imp = train(Suicide ~.,
                                           number = 10, 
                                           repeats = 3, 
                                           allowParallel = TRUE))
+
 all_pred <-predict(all_model, svm_test)
 
-# confusionMatrix(table(all_pred, svm_test$Suicide))
+confusionMatrix(table(all_pred, svm_test$Suicide))
+
 ```
 
-```{r linear_all_plot}
+
+Plot prediction
+
+
+```{r}
 pCol <- c( '#ff8301', '#bf5ccb')
 
 svm_test1$drug_pred<- ADHD_pred
 
-p1 = ggplot(svm_test1, aes(x = Suicide, y = ADHD_pred, color = Suicide)) +
+ggplot(svm_test1, aes(x = Suicide, y = ADHD_pred, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol)+
-  labs(title = 'svmLinear Accuracy : 0.71')
+  scale_color_manual(values = pCol)
 ```
 
-```{r radial_all}
+
+This svmLiear is actually the worse our of all of them. 
+
+
+### svmRadial
+
+Prediction of svmRadial 
+
+```{r}
 set.seed(123)
 all_model_rad <- train(
   Suicide ~., data = svm_train, method = "svmRadial",
@@ -1372,19 +1615,30 @@ all_model_imp_rad = train(Suicide ~.,
 
 all_pred_rad <-predict(all_model_rad, svm_test)
 
-# confusionMatrix(table(all_pred_rad, svm_test$Suicide))
+confusionMatrix(table(all_pred_rad, svm_test$Suicide))
+
 ```
 
-```{r radial_all_plot}
+Plot prediction
+
+
+```{r}
 svm_test1$all_pred_rad<- all_pred_rad
 
-p2 = ggplot(svm_test1, aes(x = Suicide, y = all_pred_rad, color = Suicide)) +
+ggplot(svm_test1, aes(x = Suicide, y = all_pred_rad, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol)+
-  labs(title = 'svmRadial Accuracy : 0.69')
+  scale_color_manual(values = pCol)
 ```
 
-```{r poly_all}
+
+So far svmRadial gives the best result for all of the features. 
+
+
+### svmPoly 
+
+Prediction for svmPoly
+
+```{r}
 set.seed(123)
 all_model_poly <- train(
   Suicide ~., data = svm_train, method = "svmPoly",
@@ -1403,68 +1657,88 @@ all_model_imp_poly = train(Suicide ~.,
 
 all_pred_poly <-predict(all_model_poly, svm_test)
 
-# confusionMatrix(table(all_pred_poly, svm_test$Suicide))
+confusionMatrix(table(all_pred_poly, svm_test$Suicide))
 ```
 
-```{r poly_all_plot}
+
+Plot prediction 
+
+
+```{r}
 svm_test1$all_pred_poly<- all_pred_poly
 
-p3 = ggplot(svm_test1, aes(x = Suicide, y = all_pred_poly, color = Suicide)) +
+ggplot(svm_test1, aes(x = Suicide, y = all_pred_poly, color = Suicide)) +
   geom_jitter(size = 3) +
-  scale_color_manual(values = pCol)+
-  labs(title = 'svmPoly Accuracy : 0.75')
-```
-```{r final_plot_af}
-gridExtra::grid.arrange(p1,p2,p3, nrow=3)
+  scale_color_manual(values = pCol)
 ```
 
-svmPoly gave the best prediction results out of all of them.
 
-##### Model Validation 
+svmPoly gave the best prediction results out of all of them. Since svmLinear was so low, svmLinear will be tuned to see if it has a better outcome. 
 
-```{r mv_all}
+
+
+### svmLinear Tuned All Features
+
+
+Plot model accuracy vs different values of Cost
+
+
+```{r}
 set.seed(123)
 aamodel <- train(
-  Suicide ~., data = svm_train, method = "svmPoly",
+  Suicide ~., data = svm_train, method = "svmLinear",
   trControl = trainControl("cv", number = 10),
-  tuneLength = 5,
+  tuneGrid = expand.grid(C = seq(0, 2, length = 20)),
   preProcess = c("center","scale")
   )
-
-all_pred_best <-predict(aamodel, svm_test)
-
-# confusionMatrix(table(all_pred_best, svm_test$Suicide))
+# Plot model accuracy vs different values of Cost
+plot(aamodel)
 ```
 
-The tuning of all features with the svmPoly model resulted in the accuracy on the test data of 0.73.  
+
+Best tuning parameter C
 
 
-#### SVM Conclusion
+```{r}
+aamodel$bestTune
+```
+
+
+```{r}
+all_pred_best <-predict(aamodel, svm_test)
+
+confusionMatrix(table(all_pred_best, svm_test$Suicide))
+```
+
+The tuneing for svmLinear did not change the prediction it is still the same as the other svmLinear. 
+
+
+##### Conclusion
 
 The features of models were split up as the same based on the results of the PCA analysis, so the data was separated by the drug features, ADHD condensed questions, MD condensed questions and all of the features which included everything. 
 
-* The drug feature models: For the drug feature models the svmPoly turned out to give the best prediction. With that outcome it seems like the drug feature is Linear. 
+The drug feature models: For the drug feature models the svmLinear turned out to give the best prediction. With that outcome it seems like the drug feature is Linear. 
 
-* The ADHD Questions: The model that gave the best prediction was the svmLinear, and with that outcome it seems like it is linear. 
+The ADHD Questions: The model that gave the best prediction was the svmLinear, and with that outcome it seems like it is linear. 
 
-* The MD Questions: Based on what was run all of the models gave the same outcome, so it is not know if the features are more linear or non linear. 
+The MD Questions: Based on what was run all of the models gave the same outcome, so it is not know if the features are more linear or non linear. 
 
-* All Features: The one with all of the features had a completely different outcome in comparison to all of the models. The svmLinear gave the worst outcome, and the svmRadial and the svmPoly gave better predictions. Out of all of them svmPoly was the best. With this outcome it seems like the All Features models are more non linear. 
+All Features: The one with all of the features had a completely different outcome in comparison to all of the models. The svmLinear gave the worst outcome, and the svmRadial and the svmPoly gave better predictions. Out of all of them svmPoly was the best. With this outcome it seems like the All Features models are more non linear. 
 
 As the PCA model the drug features gave a better outcome compared to the ADHD questions and MD questions, but the All Features model was better in comparison to the PCA analysis. 
 
 
-### Final Discussion & Conclusions
-
-
+#### Sub
 
 ### Works Cited
 
-* Gravetter, Frederick J, and Larry B. Wallnau. *Statistics for the Behavioral Sciences.* , 2013. Print.
+* Gravetter, Frederick J, and Larry B. Wallnau. Statistics for the Behavioral Sciences. , 2013. Print.
 * Kuhn, M. (2019). *The caret package*. Accessed April 21, 2021, from https://topepo.github.io/caret/.
-* Kuhn, M., and Johnson, K. (2013). [*The basics of encoding categorical data for predictive models*](!http://appliedpredictivemodeling.com/blog/2013/10/23/the-basics-of-encoding-categorical-data-for-predictive-models). Applied Predictive Modeling. Accessed April 21, 2021.
-* [*Clustering in R*](!blog.dominodatalab.com/clustering-in-r/). Data Science Blog by Domino, 31 Mar. 2021. 
-* Alboukadel, et al. [*5 Amazing Types of Clustering Methods You Should Know.*](!www.datanovia.com/en/blog/types-of-clustering-methods-overview-and-quick-start-r-code/) Datanovia, 25 Dec. 2019. 
+* Kuhn, M., and Johnson, K. (2013). *The basics of encoding categorical data for predictive models*. Applied Predictive Modeling. Accessed April 21, 2021 from http://appliedpredictivemodeling.com/blog/2013/10/23/the-basics-of-encoding-categorical-data-for-predictive-models.
+
+“Clustering in R.” Data Science Blog by Domino, 31 Mar. 2021, blog.dominodatalab.com/clustering-in-r/. 
+
+Alboukadel, et al. “5 Amazing Types of Clustering Methods You Should Know.” Datanovia, 25 Dec. 2019, www.datanovia.com/en/blog/types-of-clustering-methods-overview-and-quick-start-r-code/. 
 
 ### Code Appendix
 
@@ -1524,20 +1798,9 @@ knitr::opts_chunk$set(echo=TRUE, eval=FALSE)
 ```
 ```{r dummiescombos}
 ```
-```{r, kmeans_prep}
+```{r split}
 ```
-```{r, kmeans_hartigan}
-```
-```{r, kmeans_apply}
-```
-```{r, kmeans_age}
-```
-```{r, kmeans_race}
-```
-```{r, kmeans_sex}
-```
-```{r, hier_clust}
-```
+
 ```{r pca_base}
 ```
 ```{r pca_adhd}
@@ -1571,76 +1834,4 @@ knitr::opts_chunk$set(echo=TRUE, eval=FALSE)
 ```{r, pca_all_final, fig.height=5}
 ```
 ```{r pca_all_cumulative_scree}
-```
-```{r split}
-```
-```{r svm_base}
-```
-```{r svm data prep}
-```
-```{r df}
-```
-```{r drugboruta, message=FALSE, warning=FALSE}
-```
-```{r linear_df}
-```
-```{r linear_df_plot}  
-```
-```{r radial_df}
-```
-```{r poly_df}
-```
-```{r poly_df_plot}  
-```
-```{r mv_df}
-```
-```{r adhd_df}
-```
-```{r linear_adhd}
-```
-```{r linear_adhd_plot}  
-```
-```{r radial_adhd}
-```
-```{r radial_adhd_plot}  
-```
-```{r poly_adhd}
-```
-```{r poly_adhd_plot}  
-```
-```{r mv_adha}
-```
-```{r md_df}
-```
-```{r linear_md}
-```
-```{r linear_md_plot}  
-```
-```{r radial_md}
-```
-```{r radial_md_plot}  
-```
-```{r poly_md}
-```
-```{r poly_md_plot}  
-```
-```{r final_plot_md}
-```
-```{r boruta_all, message=FALSE, warning=FALSE}
-```
-```{r linear_all}
-```
-```{r linear_all_plot}  
-```
-```{r radial_all}
-```
-```{r radial_all_plot}  
-```
-```{r poly_all}
-```
-```{r poly_all_plot}  
-```
-```{r final_plot_af}
-```
-```{r mv_all}
 ```
