@@ -531,11 +531,46 @@ df_transform <- df_dummy %>% preProcess(method = c('center','scale')) %>%
 ### Clustering of Patients
 
 Clustering is the partitioning of data into groups. This can be done in a number of ways, the two most popular being K-means and hierarchical clustering. In terms of a data frame, a clustering algorithm finds out which rows are similar to each other. Rows that are grouped together have high similarity to each other and low similarity to rows outside the grouping.
+  
+#### Clustering - Dataset
 
+To perform a cluster analysis in R, the data should be prepared such that rows are observations and cloumns are variables. Any missing value in the data must be omitted. The data must be scale to make variables comparable. Variables must be transformed so they have mean zero and standard deviation of one.
 
-#### K-means clustering in R
+```{r, kmeans_prep}
+cluster_df <- df %>% 
+  select(-Psych.meds.) %>%
+  rename_all(make.names)
 
-K-means clustering consists of defining clusters so that the total intra-cluster variation is minimized. For clustering distance measures, the classification of variables into groups requires some methods to compute the distance between each pair of variables. One method used is the distance matrix. 
+cluster_df <-na.omit(cluster_df)
+
+# Make 3 dataframes with just age, race, sex so we can use the table function to 
+# see how the datapoints fall into each cluster.
+cluster_age <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Race"))]
+cluster_race <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Age"))]
+cluster_sex <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Race"))]
+cluster_df <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Sex", "Race"))]
+
+ADHD_df <- read_csv("https://raw.githubusercontent.com/greeneyefirefly/DATA622-Group3/main/Project_4/ADHD_data.csv")
+ADHD_df <- ADHD_df %>% rename_all(make.names)
+ADHD_df <- na.omit(ADHD_df)
+ADHD_df <- ADHD_df[, -which(names(ADHD_df) %in% c("Initial"))]
+dfc <- scale(ADHD_df)
+```
+
+#### Hartigan's Rule
+
+Finding the right number of clusters is important in getting a good partitioning of the data. A good metric for determining the optimal number of clusters is Hartigan’s rule. It essentially compares the ratio of the within-cluster sum of squares for a clustering with k clusters and one with k + 1 clusters, accounting for the number of rows and clusters. If that number is greater than 10, then it is worth using k + 1 clusters. Fitting this repeatedly can be a chore and computationally inefficient if not done right. The useful package has the FitKMeans function for doing just that.
+
+```{r, kmeans_hartigan}
+best_cluster <- FitKMeans(cluster_df, max.clusters=20, nstart=25, seed=626)
+PlotHartigan(best_cluster)
+```
+
+The Hartigan plot shows that the optimal cluster number to use is 3.
+
+#### K-means Clustering
+
+One of the more popular algorithms for clustering is K-means. It divides the observations into predefined, discrete groups based on some distance metric. K-means clustering consists of defining clusters so that the total intra-cluster variation is minimized. For clustering distance measures, the classification of variables into groups requires some methods to compute the distance between each pair of variables. One method used is the distance matrix. 
 
 1. Specify the number of clusters (K) to be used.
 
@@ -547,37 +582,17 @@ K-means clustering consists of defining clusters so that the total intra-cluster
 
 5. Iteratively minimize the total within sum of square. Iterate steps 3 and 4 until the cluster assignments stops or the maximum number of iterations is reached.
 
-#### Data Preparation
+Firstly, the distance matrix of the variables is created
 
-To perform a cluster analysis in R, the data should be prepared:
-
-Rows are observations and cloumns are variables.
-
-Any missing value in the data must be omitted.
-
-The data must be scale to make variables comparable. Variables must be transformed so they have mean zero and standard deviation of one.
-
-```{r}
-ADHD_df <- read_csv("https://raw.githubusercontent.com/greeneyefirefly/DATA622-Group3/main/Project_4/ADHD_data.csv")
-ADHD_df <- ADHD_df %>% rename_all(make.names)
-ADHD_df <- na.omit(ADHD_df)
-ADHD_df <- ADHD_df[, -which(names(ADHD_df) %in% c("Initial"))]
-df <- scale(ADHD_df)
-head(df)
-```
-
-Create and visualize the distance matrix of the variables.
-
-```{r}
-distance <- get_dist(df)
+```{r dis}
+distance <- get_dist(dfc)
 fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
 ```
 
 First, group the data into two clusters (centers = 2). The kmeans function also has an nstart option that attempts multiple initial configurations and reports on the best one. For example, adding nstart = 25 will generate 25 initial configurations.
 
-
-```{r}
-k2 <- kmeans(df, centers = 2, nstart = 25)
+```{r kmeanstart}
+k2 <- kmeans(dfc, centers = 2, nstart = 25)
 str(k2)
 ```
 
@@ -591,13 +606,13 @@ Breakdown of k-means function and what it means:
 **betweenss**: The between-cluster sum of squares, i.e. $totss-tot.withinss$.
 **size**: The number of points in each cluster.
 
-```{r}
-fviz_cluster(k2, data = df)
+```{r fvis_clus}
+fviz_cluster(k2, data = dfc)
 ```
 
-Using scatter plot to compared Suicide Attempts vs Age. There doesn't seem to be any relationship with age and suicide attempts. However there seem to be more suicide attempts by patients in cluster 2.
+Using scatter plot to compared Suicide Attempts vs Age. There does not seem to be any relationship with age and suicide attempts. However, there seem to be more suicide attempts by patients in cluster 2.
 
-```{r}
+```{r cl_adha}
 ADHD_df %>%
   as_tibble() %>%
   mutate(cluster = k2$cluster) %>%
@@ -607,27 +622,25 @@ ADHD_df %>%
 
 Run the kmeans function with clusters 3, 4, and 5 to see how it looks like. However, doing this does not give the optimal cluster to use, it is just strictly for observation.
 
-
-```{r}
-k3 <- kmeans(df, centers = 3, nstart = 25)
-k4 <- kmeans(df, centers = 4, nstart = 25)
-k5 <- kmeans(df, centers = 5, nstart = 25)
+```{r more_clu}
+k3 <- kmeans(dfc, centers = 3, nstart = 25)
+k4 <- kmeans(dfc, centers = 4, nstart = 25)
+k5 <- kmeans(dfc, centers = 5, nstart = 25)
 # plots to compare
-p1 <- fviz_cluster(k2, geom = "point", data = df) + ggtitle("k = 2")
-p2 <- fviz_cluster(k3, geom = "point",  data = df) + ggtitle("k = 3")
-p3 <- fviz_cluster(k4, geom = "point",  data = df) + ggtitle("k = 4")
-p4 <- fviz_cluster(k5, geom = "point",  data = df) + ggtitle("k = 5")
-library(gridExtra)
-grid.arrange(p1, p2, p3, p4, nrow = 2)
+p1 <- fviz_cluster(k2, geom = "point", data = dfc) + ggtitle("k = 2")
+p2 <- fviz_cluster(k3, geom = "point",  data = dfc) + ggtitle("k = 3")
+p3 <- fviz_cluster(k4, geom = "point",  data = dfc) + ggtitle("k = 4")
+p4 <- fviz_cluster(k5, geom = "point",  data = dfc) + ggtitle("k = 5")
+gridExtra::grid.arrange(p1, p2, p3, p4, nrow = 2)
 ```
 
 There are many methods to find the optimal cluster to use for k-means clustering. Sihouette method would be used for this example. The average silhouette method measures the quality of a clustering and it determines how well each variable lies within its cluster. A high average silhouette width indicates a good clustering. The average silhouette method computes the average silhouette of observations for different values of k. The optimal number of clusters k is the one that maximizes the average silhouette over a range of possible values for k. 
 
-```{r}
+```{r silhouette}
 # function to compute average silhouette for k clusters
 avg_sil <- function(k) {
-  km.res <- kmeans(df, centers = k, nstart = 25)
-  ss <- silhouette(km.res$cluster, dist(df))
+  km.res <- kmeans(dfc, centers = k, nstart = 25)
+  ss <- silhouette(km.res$cluster, dist(dfc))
   mean(ss[, 3])
 }
 # Compute and plot wss for k = 2 to k = 15
@@ -642,73 +655,52 @@ plot(k.values, avg_sil_values,
 
 The optimal cluster chosen appears to be 3.
 
-
-```{r}
-fviz_nbclust(df, kmeans, method = "silhouette")
+```{r optimal}
+fviz_nbclust(dfc, kmeans, method = "silhouette")
 ```
 
 Update the final cluster method with the optimal cluster chosen by the average Silhouette Method. 
 
-```{r}
+```{r k3}
 # Compute k-means clustering with k = 3
 set.seed(123)
-final <- kmeans(df, 3, nstart = 25)
-print(final)
+final <- kmeans(dfc, 3, nstart = 25)
+#print(final)
 ```
-
 
 Plot the final clusters
 
-```{r}
-fviz_cluster(final, data = df)
+```{r finalplot}
+fviz_cluster(final, data = dfc)
 ```
 
 Observe the means of each variable of each of the three clusters.
 
-```{r}
-df %>%
+```{r sum}
+as.data.frame(dfc) %>%
   mutate(Cluster = final$cluster) %>%
   group_by(Cluster) %>%
-  summarise_all("mean")
+  summarise_all("mean") %>% 
+  kable(digits=2L) %>% kable_styling() %>%
+  scroll_box(width = "100%", height = "100%")
 ```
 
-#### Clustering Conclusion:
+#### Clustering Conclusion
 
-*Mental Health Dataset Column Definition*
+By exploring the different clustering among the data set, it can established that:
 
-Using the variable description of each column, predictions can be made for each clusters.
+* Cluster 1 and Cluster 3 are overlapping and quite similar to one another. Cluster 2 is alone by itself. This can be seen in the data from the table above. Cluster 1 and 3 have patients answering on average higher than Cluster 2 for ADHD Questions.
+Cluster 3 can be considered a youth Cluster with a mean age of 26.07, while Cluster 1 have a mean age of 48.13 and Cluster 2 have a mean age of 41.66. 
 
-Columns | Variable | Description  
----|---|-----  
-C |  Sex | Male-1, Female-2  
-D | Race | White-1, African American-2, Hispanic-3, Asian-4, Native American-5, Other or missing data -6  
-E - W | ADHD self-report scale |  Never-0, rarely-1, sometimes-2, often-3, very often-4  
-X - AM | Mood disorder questions |  No-0, yes-1; question 3: no problem-0, minor-1, moderate-2, serious-3  
-AN - AS | Individual substances misuse |   no use-0, use-1, abuse-2, dependence-3   
-AT | Court Order |   No-0, Yes-1  
-AU | | Education |  1-12 grade, 13+ college  
-AV | History of Violence |  No-0, Yes-1  
-AW | Disorderly Conduct |  No-0, Yes-1  
-AX | Suicide attempt |  No-0, Yes-1  
-AY | Abuse Hx |  No-0, Physical (P)-1, Sexual (S)-2, Emotional (E)-3, P&S-4, P&E-5, S&E-6, P&S&E-7  
-AZ | Non-substance-related Dx |  0 - none; 1 - one; 2 - More than one  
-BA | Substance-related Dx |  0 - none; 1 - one Substance-related; 2 - two; 3 - three or more  
-BB | Psychiatric Meds |  0 - none; 1 - one psychotropic med; 2 - more than one psychotropic med  
+* For the mood questions, there aren't much difference between each clusters. However for mood question 3, Cluster 1 and 3 are both 2.4 while Cluster 2 is 1.8.
 
-Cluster 1 and Cluster 3 are overlapping and quite similar to one another. Cluster 2 is alone by itself. This can be seen in the data from the table above. Cluster 1 and 3 have patients answering on average higher than cluster 2 for ADHD Questions.
-Cluster 3 can be considered a youth cluster with a mean age of 26.07, while cluster 1 have 48.13 and cluster have 41.66. 
+* Everyone in Cluster 2 has done cocaine. Only Cluster 1 have patients doing sedatives.hypnotics. 
 
-For the mood questions, there aren't much difference between each clusters. However for mood question 3, Cluster 1 and 3 are both 2.4 while Cluster 2 is 1.8.
+* Cluster 3 patients have 4 times more likely to have a court order compared to Cluster 1 and 2.
 
-Everyone in cluster 2 has done cocaine. Only cluster 1 have patients doing sedatives.hypnotics. 
+* Education is all around Grade 12.5 - 12.6 for all three clusters.
 
-Cluster 3 patients have 4 times more likely to have a court order compared to cluster 1 and 2.
-
-Education is all around Grade 12.5 - 12.6 for all three clusters.
-
-
-Cluster 3 seems to have almost twice the amount of suicide attempts compared to cluster 1 and 2.
-
+* Cluster 3 seems to have almost twice the amount of suicide attempts compared to Cluster 1 and 2.
 
 ### PCA
 
@@ -1051,7 +1043,7 @@ kable(head(importance[order(-importance$meanImp), ]),
   kable_styling(bootstrap_options = "striped", full_width = TRUE)
 ```
 
-Only two are considered to be important, which are 'Opioids' and 'Alcohol'.
+Only three are considered to be important, which are 'Alcohol', 'Cocaine', and 'Opioids'.
 
 Next, SVM on the drug features is use to model whether a patient attempted suicide. The caret package will be used for all of the models and it will include a preprocess function which will be centered and scaled. 
 
@@ -1590,16 +1582,27 @@ knitr::opts_chunk$set(echo=TRUE, eval=FALSE)
 ```
 ```{r, kmeans_hartigan}
 ```
-```{r, kmeans_apply}
+```{r dis}
 ```
-```{r, kmeans_age}
+```{r kmeanstart}
 ```
-```{r, kmeans_race}
+```{r fvis_clus}
 ```
-```{r, kmeans_sex}
+```{r cl_adha}
 ```
-```{r, hier_clust}
+```{r more_clu}
 ```
+```{r silhouette}
+```
+```{r optimal}
+```
+```{r k3}
+```
+```{r finalplot}
+```
+```{r sum}
+```
+
 ```{r pca_base}
 ```
 ```{r pca_adhd}
