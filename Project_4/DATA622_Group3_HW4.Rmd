@@ -2,7 +2,7 @@
 title: "CUNY SPS DATA 622 - Machine Learning and Big Data"
 subtitle: 'Spring 2021 - Group 3 - Homework 4'
 author: "Maryluz Cruz, Samantha Deokinanan, Amber Ferger, Tony Mei, and Charlie Rosemond"
-date: "`r format(Sys.time(), '%B %d, %Y')`"
+date: "6th May, 2021"
 output: 
   html_document:
     theme: cerulean
@@ -537,16 +537,12 @@ Clustering is the partitioning of data into groups. This can be done in a number
 To perform a cluster analysis in R, the data should be prepared such that rows are observations and cloumns are variables. Any missing value in the data must be omitted. The data must be scale to make variables comparable. Variables must be transformed so they have mean zero and standard deviation of one.
 
 ```{r, kmeans_prep}
-
-ADHD_df <- read_csv("https://raw.githubusercontent.com/greeneyefirefly/DATA622-Group3/main/Project_4/ADHD_data.csv")
+ADHD_df <- read_csv(
+  "https://raw.githubusercontent.com/greeneyefirefly/DATA622-Group3/main/Project_4/ADHD_data.csv")
 ADHD_df <- ADHD_df %>% rename_all(make.names)
-
 ADHD_df <- na.omit(ADHD_df)
-
 ADHD_df <- ADHD_df[, -which(names(ADHD_df) %in% c("Initial"))]
-
 dfc <- scale(ADHD_df)
-
 ```
 
 #### K-means Clustering
@@ -579,13 +575,13 @@ str(k2)
 
 Breakdown of k-means function and what it means:
 
-**cluster**: A vector of integers (from 1:k) indicating the cluster to which each point is allocated.
-**centers**: A matrix of cluster centers.
-**totss**: The total sum of squares.
-**withinss**: Vector of within-cluster sum of squares, one component per cluster.
-**tot.withinss**: Total within-cluster sum of squares, i.e. sum(withinss).
-**betweenss**: The between-cluster sum of squares, i.e. $totss-tot.withinss$.
-**size**: The number of points in each cluster.
+**cluster**: A vector of integers (from 1:k) indicating the cluster to which each point is allocated.  
+**centers**: A matrix of cluster centers.  
+**totss**: The total sum of squares.  
+**withinss**: Vector of within-cluster sum of squares, one component per cluster.  
+**tot.withinss**: Total within-cluster sum of squares, i.e. sum(withinss).  
+**betweenss**: The between-cluster sum of squares, i.e. $totss-tot.withinss$.  
+**size**: The number of points in each cluster.  
 
 ```{r fvis_clus}
 fviz_cluster(k2, data = dfc)
@@ -674,17 +670,15 @@ By exploring the different clustering among the data set, it can established tha
 
 * For the ADHD questions, Cluster 1 patients answered the questions between sometimes and often. Cluster 2 patients answered the questions between rarely and sometimes. ADHD total is higher for Cluster 1 than Cluster 2.
 
-* For the mood questions, a lot of Cluster 1 patients answer yes to mood disorder questions than cluster2 patients. For mood question3, cluster 1 patients answered it between moderate and serioues vs cluster 2 patients answered it between minor and moderate. MD.total is higher in cluster 1 than cluster 2.
+* For the mood questions, a lot of Cluster 1 patients answer yes to mood disorder questions than cluster2 patients. For mood question3, cluster 1 patients answered it between moderate and serious vs cluster 2 patients answered it between minor and moderate. MD.total is higher in cluster 1 than cluster 2.
 
-* Patients are more prone to use Alcohol, THC,	Cocaine,	Stimulants,	Sedative.hypnotics in cluster 1 than patients in cluster 2. However Cluster 2 patients double than the patients in cluster 1 in doing opioids. 
+* Patients are more prone to use Alcohol, THC, Cocaine, Stimulants, Sedative.hypnotics in cluster 1 than patients in cluster 2. However Cluster 2 patients double than the patients in cluster 1 in doing opioids. 
 
 * Cluster 1 patients have 2 times more likely to have a court order compared to Cluster 2 patients.
 
 * Cluster 1 patients are mostly patients from 1-12 grade, while Cluster 2 are college. 
 
 * Cluster 1 quintuple the amount of suicide attempts compared to Cluster 2.
-
-Let's call the Cluster 1, 1-12Graders and Cluster 2, CollegeGraders.
 
 ### PCA
 
@@ -1001,10 +995,14 @@ svm_test$Suicide<-as.factor(svm_test$Suicide)
 
 ```{r svm data prep}
 svm_train2<- train%>%
-  select(-Race.1,-Race.2,-Race.3, -Race.6, -Age, -Sex.1,-Sex.2,-ADHD.Total, -MD.TOTAL, -starts_with('Education'), -Psych.meds..L, -Psych.meds..Q)
+  select(-Race.1,-Race.2,-Race.3, -Race.6, -Age, -Sex.1,-Sex.2,
+         -ADHD.Total, -MD.TOTAL, -starts_with('Education'), 
+         -Psych.meds..L, -Psych.meds..Q)
 
 svm_test2<- test%>%
-   select(-Race.1,-Race.2,-Race.3, -Race.6, -Age, -Sex.1,-Sex.2,-ADHD.Total, -MD.TOTAL, -starts_with('Education'), -Psych.meds..L, -Psych.meds..Q)
+   select(-Race.1,-Race.2,-Race.3, -Race.6, -Age, -Sex.1,-Sex.2,
+          -ADHD.Total, -MD.TOTAL, -starts_with('Education'), 
+          -Psych.meds..L, -Psych.meds..Q)
 ```
 
 #### Drug Features 
@@ -1029,7 +1027,6 @@ drugs_model <- train(
   trControl = trainControl("cv", number = 10),
   preProcess = c("center","scale")
   )
-
 ```
 
 ```{r linear_df_plot}  
@@ -1472,11 +1469,11 @@ If one wanted to predict whether or not someone would commit Suicide the best mo
 
 ### Final Discussion & Conclusions
 
+From this analysis, the subgroups revealed from the clustering suggest that there are two major groups. Cluster 1 tends to have a higher ADHD and Mood Disorder total scores than patients from Cluster 2. While patients from Cluster 1 report frequency use of most of the listed drugs, Cluster 2 patients particularly reported more use of opioids. Lastly, Cluster 1 quintuple the amount of suicide attempts compared to Cluster 2. Without sounding too suggestive of the groups, the primary distinctions that separate these two groups lead to Cluster 1 being named the "highly at-risk for mental health disorder with 1-12 Grade education-level" patients and Cluster 2 being the "moderately at-risk for mental health disorder with College education-level" patients. 
 
 PCA focused on the three general categories of features—the ADHD questionnaire, MD questionnaire, and drug features—separately then together. The optimal number of principal components to retain 90% of the variance differed across categories, with nine for the ADHD features, seven for MD features, and five of the drug features. The categories’ first principal components accounted for approximately 60% of the variance in the ADHD features, approximately 53% of the variance in the MD features, and approximately 34% of the variance in the drug features. Combining the three categories, a final PCA of all features showed seventeen principal components to be necessary to meet the 90% threshold, with the first component accounting for approximately 30% of the total variance.
 
 SVM modeling to predict `Suicide` followed the same course as PCA, considering the general feature categories separately first. It compared the performance of linear, radial, and polynomial kernels for each category. The model using a linear kernel performed the best for the ADHD features, and the model with a polynomial kernel performed the best for the drug features. These results suggest linear data for these categories of features. Notably, all kernels performed similarly with the MD features, leaving the linearity of the associated data unclear. Considering all features combined, the model using the polynomial kernel performed the best and showed a test set accuracy of approximately 0.73 when predicting `Suicide`. This value exceeded the accuracy measures for the category-specific models.
-
 
 ### Works Cited
 
