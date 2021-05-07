@@ -537,36 +537,17 @@ Clustering is the partitioning of data into groups. This can be done in a number
 To perform a cluster analysis in R, the data should be prepared such that rows are observations and cloumns are variables. Any missing value in the data must be omitted. The data must be scale to make variables comparable. Variables must be transformed so they have mean zero and standard deviation of one.
 
 ```{r, kmeans_prep}
-cluster_df <- df %>% 
-  select(-Psych.meds.) %>%
-  rename_all(make.names)
-
-cluster_df <-na.omit(cluster_df)
-
-# Make 3 dataframes with just age, race, sex so we can use the table function to 
-# see how the datapoints fall into each cluster.
-cluster_age <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Race"))]
-cluster_race <- cluster_df[, -which(names(df) %in% c("Initial", "Sex", "Age"))]
-cluster_sex <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Race"))]
-cluster_df <- cluster_df[, -which(names(df) %in% c("Initial", "Age", "Sex", "Race"))]
 
 ADHD_df <- read_csv("https://raw.githubusercontent.com/greeneyefirefly/DATA622-Group3/main/Project_4/ADHD_data.csv")
 ADHD_df <- ADHD_df %>% rename_all(make.names)
+
 ADHD_df <- na.omit(ADHD_df)
+
 ADHD_df <- ADHD_df[, -which(names(ADHD_df) %in% c("Initial"))]
+
 dfc <- scale(ADHD_df)
+
 ```
-
-#### Hartigan's Rule
-
-Finding the right number of clusters is important in getting a good partitioning of the data. A good metric for determining the optimal number of clusters is Hartigan’s rule. It essentially compares the ratio of the within-cluster sum of squares for a clustering with k clusters and one with k + 1 clusters, accounting for the number of rows and clusters. If that number is greater than 10, then it is worth using k + 1 clusters. Fitting this repeatedly can be a chore and computationally inefficient if not done right. The useful package has the FitKMeans function for doing just that.
-
-```{r, kmeans_hartigan}
-best_cluster <- FitKMeans(cluster_df, max.clusters=20, nstart=25, seed=626)
-PlotHartigan(best_cluster)
-```
-
-The Hartigan plot shows that the optimal cluster number to use is 3.
 
 #### K-means Clustering
 
@@ -653,7 +634,7 @@ plot(k.values, avg_sil_values,
        ylab = "Average Silhouettes")
 ```
 
-The optimal cluster chosen appears to be 3.
+The optimal cluster chosen appears to be 2.
 
 ```{r optimal}
 fviz_nbclust(dfc, kmeans, method = "silhouette")
@@ -662,9 +643,9 @@ fviz_nbclust(dfc, kmeans, method = "silhouette")
 Update the final cluster method with the optimal cluster chosen by the average Silhouette Method. 
 
 ```{r k3}
-# Compute k-means clustering with k = 3
+# Compute k-means clustering with k = 2
 set.seed(123)
-final <- kmeans(dfc, 3, nstart = 25)
+final <- kmeans(dfc, 2, nstart = 25)
 #print(final)
 ```
 
@@ -674,10 +655,10 @@ Plot the final clusters
 fviz_cluster(final, data = dfc)
 ```
 
-Observe the means of each variable of each of the three clusters.
+Observe the means of each variable of each of the two clusters.
 
 ```{r sum}
-as.data.frame(dfc) %>%
+as.data.frame(ADHD_df) %>%
   mutate(Cluster = final$cluster) %>%
   group_by(Cluster) %>%
   summarise_all("mean") %>% 
@@ -689,18 +670,21 @@ as.data.frame(dfc) %>%
 
 By exploring the different clustering among the data set, it can established that:
 
-* Cluster 1 and Cluster 3 are overlapping and quite similar to one another. Cluster 2 is alone by itself. This can be seen in the data from the table above. Cluster 1 and 3 have patients answering on average higher than Cluster 2 for ADHD Questions.
-Cluster 3 can be considered a youth Cluster with a mean age of 26.07, while Cluster 1 have a mean age of 48.13 and Cluster 2 have a mean age of 41.66. 
+* Cluster 1 have a mean age of 39.5 compared to cluster 2 with a mean age of 41.7.
 
-* For the mood questions, there aren't much difference between each clusters. However for mood question 3, Cluster 1 and 3 are both 2.4 while Cluster 2 is 1.8.
+* For the ADHD questions, Cluster 1 patients answered the questions between sometimes and often. Cluster 2 patients answered the questions between rarely and sometimes. ADHD total is higher for Cluster 1 than Cluster 2.
 
-* Everyone in Cluster 2 has done cocaine. Only Cluster 1 have patients doing sedatives.hypnotics. 
+* For the mood questions, a lot of Cluster 1 patients answer yes to mood disorder questions than cluster2 patients. For mood question3, cluster 1 patients answered it between moderate and serioues vs cluster 2 patients answered it between minor and moderate. MD.total is higher in cluster 1 than cluster 2.
 
-* Cluster 3 patients have 4 times more likely to have a court order compared to Cluster 1 and 2.
+* Patients are more prone to use Alcohol, THC,	Cocaine,	Stimulants,	Sedative.hypnotics in cluster 1 than patients in cluster 2. However Cluster 2 patients double than the patients in cluster 1 in doing opioids. 
 
-* Education is all around Grade 12.5 - 12.6 for all three clusters.
+* Cluster 1 patients have 2 times more likely to have a court order compared to Cluster 2 patients.
 
-* Cluster 3 seems to have almost twice the amount of suicide attempts compared to Cluster 1 and 2.
+* Cluster 1 patients are mostly patients from 1-12 grade, while Cluster 2 are college. 
+
+* Cluster 1 quintuple the amount of suicide attempts compared to Cluster 2.
+
+Let's call the Cluster 1, 1-12Graders and Cluster 2, CollegeGraders.
 
 ### PCA
 
