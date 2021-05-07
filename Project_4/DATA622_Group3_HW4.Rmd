@@ -1489,6 +1489,10 @@ If one wanted to predict whether or not someone would commit Suicide the best mo
 ### Final Discussion & Conclusions
 
 
+PCA focused on the three general categories of features—the ADHD questionnaire, MD questionnaire, and drug features—separately then together. The optimal number of principal components to retain 90% of the variance differed across categories, with nine for the ADHD features, seven for MD features, and five of the drug features. The categories’ first principal components accounted for approximately 60% of the variance in the ADHD features, approximately 53% of the variance in the MD features, and approximately 34% of the variance in the drug features. Combining the three categories, a final PCA of all features showed seventeen principal components to be necessary to meet the 90% threshold, with the first component accounting for approximately 30% of the total variance.
+
+SVM modeling to predict `Suicide` followed the same course as PCA, considering the general feature categories separately first. It compared the performance of linear, radial, polynomial, and sigmoid kernels for each category. The model using a linear kernel performed the best for the ADHD features, and the model with a polynomial kernel performed the best for the drug features. These results suggest linear data for these categories of features. Notably, all kernels performed similarly with the MD features, leaving the linearity of the associated data unclear. Considering all features combined, the model using the polynomial kernel performed the best and showed a test set accuracy of approximately 0.73 when predicting `Suicide`. This value exceeded the accuracy measures for the category-specific models.
+
 
 ### Works Cited
 
