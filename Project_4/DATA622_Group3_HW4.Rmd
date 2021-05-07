@@ -1463,6 +1463,8 @@ The features of models were split up as the same based on the results of the PCA
 
 * All Features: The one with all of the features had a completely different outcome in comparison to all of the models. The svmLinear gave the worst outcome, and the svmRadial and the svmPoly gave better predictions. Out of all of them svmPoly was the best. With this outcome it seems like the All Features models are more non linear. 
 
+* The SVM plot didn't exactly give the outcome as one would think, the decision areas shows that using the svm plot would not lead to a good prediction whether or not someone would commit suicide. 
+
 As the PCA model the drug features gave a better outcome compared to the ADHD questions and MD questions, but the All Features model was better in comparison to the PCA analysis. 
 
 If one wanted to predict whether or not someone would commit Suicide the best model for that prediction would be the svmPoly of the all features model.  
@@ -1482,7 +1484,8 @@ SVM modeling to predict `Suicide` followed the same course as PCA, considering t
 * Kuhn, M., and Johnson, K. (2013). [*The basics of encoding categorical data for predictive models*](!http://appliedpredictivemodeling.com/blog/2013/10/23/the-basics-of-encoding-categorical-data-for-predictive-models). Applied Predictive Modeling. Accessed April 21, 2021.
 * [*Clustering in R*](!blog.dominodatalab.com/clustering-in-r/). Data Science Blog by Domino, 31 Mar. 2021. 
 * Alboukadel, et al. [*5 Amazing Types of Clustering Methods You Should Know.*](!www.datanovia.com/en/blog/types-of-clustering-methods-overview-and-quick-start-r-code/) Datanovia, 25 Dec. 2019. 
-
+* [*SVM Model: Support Vector Machine Essentials*](http://www.sthda.com/english/articles/36-classification-methods-essentials/144-svm-model-support-vector-machine-essentials/). Statistical tools for high-throughput data analysis by kassambara, 11/03/2018 . 
+* [*Basic data analysis with palmerpenguins*](https://www.r-bloggers.com/2020/07/basic-data-analysis-with-palmerpenguins/). RBloggers by  jhk0530, July 10, 2020.
 ### Code Appendix
 
 The code chunks below represent the R code called in order during the analysis. These are reproduced in the appendix for review and comment.
