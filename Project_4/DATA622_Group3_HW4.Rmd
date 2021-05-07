@@ -1066,7 +1066,7 @@ p1 = ggplot(svm_test1, aes(x = Suicide, y = drug_pred, color = Suicide)) +
 ```{r radial_df}
 set.seed(123)
 drugs_model_rad <- train(
-  Suicide ~ Opioids + Cocaine, data = drugs_df, method = "svmRadial",
+  Suicide ~., data = drugs_df, method = "svmRadial",
   tuneLength = 5,
   trControl = trainControl("cv", number = 10),
   preProcess = c("center","scale")
@@ -1087,7 +1087,7 @@ p2 = ggplot(svm_test1, aes(x = Suicide, y = drug_pred_rad, color = Suicide)) +
 ```{r poly_df}
 set.seed(123)
 drugs_model_poly <- train(
-  Suicide ~Opioids + Cocaine, data = drugs_df, method = "svmPoly",
+  Suicide ~., data = drugs_df, method = "svmPoly",
   tuneLength = 5,
   metric="Accuracy",
   trControl = trainControl("cv", number = 10),
