@@ -974,15 +974,19 @@ SVM is a supervised machine learning algorithm that can be used for classificati
 
 SVM can be run using the e1071 package or the caret package. In the e1071 package the kernals are Linear, Radial, Polynomial or Sigimoid. In the caret package, the kernels are listed as svmLinear (for linear values), svmRadial (for non linear), and svmPoly (for nonlinear). When it is run within the svm function the kernals are listed differently in the in the e1071 it is listed under kernel, while in the caret package it is listed under method. 
 
-For the purpose of this project the caret package will be used to obtain the SVM values. svmLinear, svmRadial, and svmPoly will be used to see which one has the best outcome. 
+For the purpose of this project the caret package will be used to obtain the SVM values. svmLinear, svmRadial, and svmPoly will be used to see which one has the best outcome. The e1071 package will be used for the plot svm, the kernel used will be the best kernel outcome based on the prediction. 
+
 
 #### SVM - Dataset
 
 The data that will be used is the train and test set that was already created. Since the data was converted to include dummy variables for optimization.Some features of the train and set data will be removed in order to decrease the size of the data. The features that will be removed are 'Race', 'Sex', 'Age', because it may be highly correlated. 'Education' will also be removed since it is also demographic. As well as 'Psych.meds' will not  be used since it only 50% of data in the original data. 
 
-The features are separated based on the features that is based on the PCA analysis to see if it will have the same outcome. Boruta would be used as well in order to determine the best features for the data. This will only be used for the drug feature and for all features. Since feature importance will be used for the drug features and all features another dataset will be created for the feature selection since it won't make sense to do feature selection using Boruta with dummy variables. But for both datasets the same features is be removed. 
+The features are separated based on the features that is based on the PCA analysis to see if it will have the same outcome. Boruta would be used as well in order to determine the best features for the data it will be used in order to create the plot svm. Since the dataset includes more than three columns two features need to be selected in order to plot the graph. The top two features will be selected for the plot svm. This will only be used for the drug feature and for all features. Since feature importance will be used for the drug features and all features another dataset will be created for the feature selection since it won't make sense to do feature selection using Boruta with dummy variables. The dataset created will be used for the svm prediction and the svm plot sections.  But for both datasets the same features will be removed. 
 
 Lastly, the dataset is split 70/30 into a training set (n = 124) and a test set (n = 51). The latter will be held out for validation.
+
+The top SVM prediction of the drug features, ADHD questions features, the MD questions features, and the all features will be used to see what models gives one the best prediction to see if someone were to commit suicide. 
+
 
 ```{r split}
 set.seed(622)
@@ -1028,22 +1032,8 @@ drugs_df<-svm_train%>%
     select(Alcohol, THC, Cocaine, Stimulants, Sedative.hypnotics, Opioids, Subst.Dx, Suicide) 
 ```
 
-This dataset includes "Alcohol.","THC.", "Subst.Dx.", "Cocaine", "Stimulants.","Sedative.hypnotics.", "Opioids", along with all of the dummy variables, and Suicide which is the deciding factor. 
+This dataset includes "Alcohol.","THC.", "Subst.Dx.", "Cocaine", "Stimulants.","Sedative.hypnotics.", "Opioids", and Suicide which is the deciding factor. 
 
-##### Drug Feature Importance 
-
-```{r drugboruta, message=FALSE, warning=FALSE}
-set.seed(525)
-output = Boruta(drugs_df$Suicide ~ ., data = drugs_df, doTrace = 0)  
-roughFixMod = TentativeRoughFix(output)
-importance = attStats(TentativeRoughFix(output))
-importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
-kable(head(importance[order(-importance$meanImp), ]), 
-      caption = "Feature Importance of Drugs Data") %>%
-  kable_styling(bootstrap_options = "striped", full_width = TRUE)
-```
-
-Only three are considered to be important, which are 'Alcohol', 'Cocaine', and 'Opioids'.
 
 Next, SVM on the drug features is use to model whether a patient attempted suicide. The caret package will be used for all of the models and it will include a preprocess function which will be centered and scaled. 
 
@@ -1056,14 +1046,6 @@ drugs_model <- train(
   preProcess = c("center","scale")
   )
 
-drugs_model_imp = train(Suicide ~.,
-                 data=drugs_df,
-                 method = "svmLinear",
-                 metric = "Accuracy",
-                 trControl = trainControl(method = "repeatedcv",
-                                          number = 10, 
-                                          repeats = 3, 
-                                          allowParallel = TRUE))
 ```
 
 ```{r linear_df_plot}  
@@ -1090,17 +1072,6 @@ drugs_model_rad <- train(
   preProcess = c("center","scale")
   )
 
-
-model_imp = train(Suicide ~.,
-                 data=drugs_df,
-                 method = "svmRadial",
-                 metric = "Accuracy",
-                 trControl = trainControl(method = "repeatedcv",
-                                          number = 10, 
-                                          repeats = 3, 
-                                          allowParallel = TRUE))
-
-
 drug_pred_rad <-predict(drugs_model_rad, svm_test)
 
 # confusionMatrix(table(drug_pred_rad, svm_test$Suicide))
@@ -1123,14 +1094,6 @@ drugs_model_poly <- train(
   preProcess = c("center","scale")
   )
 
-drugs_model_poly = train(Suicide ~.,
-                 data=drugs_df,
-                 method = "svmPoly",
-                 metric = "Accuracy",
-                 trControl = trainControl(method = "repeatedcv",
-                                          number = 10, 
-                                          repeats = 3, 
-                                          allowParallel = TRUE))
 ```
 
 ```{r poly_df_plot}
@@ -1170,6 +1133,34 @@ acc = mean(predicted.classes == svm_test$Suicide)
 
 By tuning of drug features with the svmPoly model, the accuracy on the test data resulted in 0.73.  
 
+##### Drug Feature Importance plot svm 
+
+Using the top two features of the drug features dataset the svm plot will be created with that. The kernal of the best drugs features prediction will be used for the kernel of the svm plot which was svmPoly in this case it will be "polynomial" since the package to create the svm plot is the e1071. 
+
+```{r drugboruta, message=FALSE, warning=FALSE}
+set.seed(525)
+output = Boruta(drugs_df$Suicide ~ ., data = drugs_df, doTrace = 0)  
+roughFixMod = TentativeRoughFix(output)
+importance = attStats(TentativeRoughFix(output))
+importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
+kable(head(importance[order(-importance$meanImp), ]), 
+      caption = "Feature Importance of Drugs Data") %>%
+  kable_styling(bootstrap_options = "striped", full_width = TRUE)
+```  
+
+Based on the feature importance a person would most likely use these substances to commit suicide. Now to make the svm plot.
+
+
+```{r drug svm plot}
+model_svm <- svm(Suicide~ Alcohol+Cocaine , data = drugs_df, kernel = "polynomial", cost=10)
+
+plot(model_svm,drugs_df,
+     Alcohol~Cocaine)
+```
+
+Looking at the svm plot and seeing how the hyperplane is it seems that it is less likely for someone to use these top feature substances in order to commit suicide. 
+
+
 #### ADHD Questions 
 
 The original train data with the transformations is used for this one since the ADHD questions was condensed to three factors.
@@ -1194,7 +1185,7 @@ ADHD_pred <-predict(ADHD_model, svm_test2)
 ```
 
 ```{r linear_adhd_plot}
-pCol <- c( '#ff8301', '#bf5ccb')
+pCol <- c( '#12B79E', '#92EED4')
 svm_test3<-svm_test2
 svm_test3$ADHD_pred<- ADHD_pred
 
@@ -1360,21 +1351,6 @@ Again, this seems that each model results in the same accuracy rate.
 
 All of the features will be used for these models. 
 
-##### Most Important feature 
-
-```{r boruta_all, message=FALSE, warning=FALSE}
-set.seed(525)
-output = Boruta(svm_train$Suicide ~ ., data = svm_train, doTrace = 0)  
-roughFixMod = TentativeRoughFix(output)
-importance = attStats(TentativeRoughFix(output))
-importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
-kable(head(importance[order(-importance$meanImp), ]), 
-      caption = "Feature Importance of all of the Features") %>%
-  kable_styling(bootstrap_options = "striped", full_width = TRUE)
-```
-
-The most important was 'Abuse', and the others are somewhat as important. 
-
 ```{r linear_all}
 set.seed(123)
 all_model <- train(
@@ -1383,25 +1359,17 @@ all_model <- train(
   preProcess = c("center","scale")
   )
 
-all_model_imp = train(Suicide ~.,
-                 data=drugs_df,
-                 method = "svmLinear",
-                 metric = "Accuracy",
-                 trControl = trainControl(method = "repeatedcv",
-                                          number = 10, 
-                                          repeats = 3, 
-                                          allowParallel = TRUE))
 all_pred <-predict(all_model, svm_test)
 
 # confusionMatrix(table(all_pred, svm_test$Suicide))
 ```
 
 ```{r linear_all_plot}
-pCol <- c( '#ff8301', '#bf5ccb')
+pCol <- c( "#999999", "#56B4E9")
 
-svm_test1$drug_pred<- ADHD_pred
+svm_test1$drug_pred<- all_pred
 
-p1 = ggplot(svm_test1, aes(x = Suicide, y = ADHD_pred, color = Suicide)) +
+p1 = ggplot(svm_test1, aes(x = Suicide, y = all_pred, color = Suicide)) +
   geom_jitter(size = 3) +
   scale_color_manual(values = pCol)+
   labs(title = 'svmLinear Accuracy : 0.71')
@@ -1415,14 +1383,6 @@ all_model_rad <- train(
   preProcess = c("center","scale")
   )
 
-all_model_imp_rad = train(Suicide ~.,
-                 data=drugs_df,
-                 method = "svmRadial",
-                 metric = "Accuracy",
-                 trControl = trainControl(method = "repeatedcv",
-                                          number = 10, 
-                                          repeats = 3, 
-                                          allowParallel = TRUE))
 
 all_pred_rad <-predict(all_model_rad, svm_test)
 
@@ -1445,15 +1405,6 @@ all_model_poly <- train(
   trControl = trainControl("cv", number = 10),
   preProcess = c("center","scale")
   )
-
-all_model_imp_poly = train(Suicide ~.,
-                 data=drugs_df,
-                 method = "svmPoly",
-                 metric = "Accuracy",
-                 trControl = trainControl(method = "repeatedcv",
-                                          number = 10, 
-                                          repeats = 3, 
-                                          allowParallel = TRUE))
 
 all_pred_poly <-predict(all_model_poly, svm_test)
 
@@ -1492,6 +1443,32 @@ all_pred_best <-predict(aamodel, svm_test)
 
 The tuning of all features with the svmPoly model resulted in the accuracy on the test data of 0.73.  
 
+##### Most Important feature 
+
+Using the top two features of the all features dataset the svm plot will be created with that. The kernal of the best all features prediction will be used for the kernel of the svm plot which was svmPoly in this case it will be "polynomial" since the package to create the svm plot is the e1071  
+
+```{r boruta_all, message=FALSE, warning=FALSE}
+set.seed(525)
+output = Boruta(svm_train$Suicide ~ ., data = svm_train, doTrace = 0)  
+roughFixMod = TentativeRoughFix(output)
+importance = attStats(TentativeRoughFix(output))
+importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
+kable(head(importance[order(-importance$meanImp), ]), 
+      caption = "Feature Importance of all of the Features") %>%
+  kable_styling(bootstrap_options = "striped", full_width = TRUE)
+```
+
+Based on the feature importance a person would most likely use these whats considered to be the top features in order to commit suicide. Now to make the svm plot.
+
+```{r}
+model_svm <- svm(Suicide~  Opioids+Abuse , data = svm_train, kernel = "polynomial", cost=10)
+
+plot(model_svm,svm_train,
+     Opioids~Abuse)
+```
+
+Looking at the hyperplane and the fact that the points are along zero mark it seems that someone under these top features would not commit suicide. 
+
 
 #### SVM Conclusion
 
@@ -1507,6 +1484,7 @@ The features of models were split up as the same based on the results of the PCA
 
 As the PCA model the drug features gave a better outcome compared to the ADHD questions and MD questions, but the All Features model was better in comparison to the PCA analysis. 
 
+If one wanted to predict whether or not someone would commit Suicide the best model for that prediction would be the svmPoly of the all features model.  
 
 ### Final Discussion & Conclusions
 
